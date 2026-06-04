@@ -910,3 +910,117 @@ GET /api/usage/summary?
 - **首次登录后强制修改密码**
 
 > 此信息需更新到 README.md 的"快速开始"章节。
+
+---
+
+## 附录 B：开发注意事项
+
+以下是开发过程中容易踩的坑，提前注意可避免后期返工。
+
+### B.1 异步任务处理
+
+**问题：** 流式响应结束后的日志更新和用量统计，如果在同一个请求线程中处理，会阻塞最后一个 chunk 的返回。
+
+**解决方案：** 使用 `asyncio.create_task()` 创建后台任务，不要等待它完成：
+
+```python
+async def forward_stream_request():
+    # ... 转发逻辑 ...
+    
+    # ❌ 错误：await 会阻塞最后一个 chunk 的返回
+    # await audit_service.update_log_after_response(...)
+    
+    # ✅ 正确：创建后台任务，不阻塞响应
+    asyncio.create_task(
+        audit_service.update_log_after_response(
+            log_id=log_id,
+            status_code=response.status_code,
+            request_tokens=request_tokens,
+            response_tokens=response_tokens,
+            latency_ms=latency_ms
+        )
+    )
+    
+    asyncio.create_task(
+        usage_service.record_usage(
+            user_id=user.id,
+            model=model,
+            input_tokens=request_tokens,
+            output_tokens=response_tokens
+        )
+    )
+```
+
+### B.2 并发安全的统计更新
+
+**问题：** 如果多个请求同时更新同一个 API Key 的统计数据，先读再写会导致数据丢失。
+
+**解决方案：** 使用 SQLAlchemy 的原子更新，不要先查询再修改：
+
+```python
+# ❌ 错误：先读再写，并发不安全
+key = await db.get(ProviderAPIKey, key_id)
+key.total_requests += 1
+key.total_input_tokens += input_tokens
+await db.commit()
+
+# ✅ 正确：原子更新，并发安全
+await db.execute(
+    update(ProviderAPIKey)
+    .where(ProviderAPIKey.id == key_id)
+    .values(
+        total_requests=ProviderAPIKey.total_requests + 1,
+        total_input_tokens=ProviderAPIKey.total_input_tokens + input_tokens,
+        total_output_tokens=ProviderAPIKey.total_output_tokens + output_tokens
+    )
+)
+await db.commit()
+```
+
+### B.3 大请求体处理
+
+**问题：** 如果用户上传一个 10MB 的文件，完整记录到审计日志会导致数据库性能急剧下降。
+
+**解决方案：** MVP 阶段可以先记录完整内容，但增加一个最大长度限制：
+
+```python
+MAX_LOG_CONTENT_LENGTH = 100 * 1024  # 100KB
+
+request_body_str = json.dumps(request_body)
+if len(request_body_str) > MAX_LOG_CONTENT_LENGTH:
+    request_body_str = request_body_str[:MAX_LOG_CONTENT_LENGTH] + " [内容过长已截断]"
+```
+
+### B.4 数据库事务边界
+
+**问题：** 如果在同一个事务中既更新 API Key 统计，又记录审计日志，一旦其中一个失败，会导致整个事务回滚。
+
+**解决方案：** 把不同的操作放在不同的事务中：
+
+- **事务 1：** 网关转发和 API Key 状态更新
+- **事务 2：** 审计日志和用量统计
+
+即使日志记录失败，也不影响用户的正常请求。
+
+### B.5 上游响应头透传
+
+**问题：** 很多工具依赖上游返回的 `X-RateLimit-Remaining`、`X-RateLimit-Reset` 等响应头来做速率限制处理。
+
+**解决方案：** 在转发响应的时候，把上游的所有响应头原样透传给用户：
+
+```python
+async def forward_stream_request():
+    async with httpx.AsyncClient() as client:
+        async with client.stream("POST", target_url, json=request_body) as response:
+            # 透传所有响应头
+            headers = dict(response.headers)
+            # 删除可能有问题的头
+            headers.pop("content-encoding", None)
+            headers.pop("transfer-encoding", None)
+            
+            return StreamingResponse(
+                stream_response(response),
+                status_code=response.status_code,
+                headers=headers
+            )
+```
