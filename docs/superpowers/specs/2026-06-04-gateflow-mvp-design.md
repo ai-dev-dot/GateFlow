@@ -587,6 +587,31 @@ async def forward_stream_request(user, model, request_body):
 | created_at | datetime | 日志创建时间 |
 | completed_at | datetime | 日志完成时间（流式响应结束后更新） |
 
+**数据库索引（性能关键）：**
+
+审计日志表数据量大（每天几十万条），必须建立以下索引：
+
+```sql
+-- 按时间查询（最常用）
+CREATE INDEX idx_audit_logs_timestamp ON audit_logs (timestamp DESC);
+
+-- 按用户查询
+CREATE INDEX idx_audit_logs_user_time ON audit_logs (user_id, timestamp DESC);
+
+-- 按部门查询
+CREATE INDEX idx_audit_logs_dept_time ON audit_logs (department, timestamp DESC);
+
+-- 按模型查询
+CREATE INDEX idx_audit_logs_model_time ON audit_logs (model, timestamp DESC);
+
+-- 按状态查询（用于查找未完成的流式响应）
+CREATE INDEX idx_audit_logs_status ON audit_logs (status) WHERE status = 'pending';
+```
+
+**查询性能预期：**
+- 无索引：100 万条记录查询需 5-10 秒
+- 有索引：100 万条记录查询需 10-50 毫秒
+
 ### 6.2 日志查询 API
 
 ```
