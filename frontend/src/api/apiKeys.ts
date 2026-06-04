@@ -1,0 +1,36 @@
+import client from './client';
+import type { APIKey, PaginatedResponse } from '../types';
+
+/** API Key 列表 */
+export async function listAPIKeys(params?: {
+  page?: number;
+  page_size?: number;
+}): Promise<PaginatedResponse<APIKey>> {
+  const res = await client.get('/api-keys', { params });
+  return res.data;
+}
+
+/** 创建 API Key */
+export async function createAPIKey(data: {
+  name: string;
+  user_id: number;
+  rate_limit?: number;
+  expires_at?: string;
+}): Promise<APIKey & { key: string }> {
+  const res = await client.post('/api-keys', data);
+  return res.data;
+}
+
+/** 更新 API Key */
+export async function updateAPIKey(
+  id: number,
+  data: Partial<Pick<APIKey, 'name' | 'is_active' | 'rate_limit' | 'expires_at'>>,
+): Promise<APIKey> {
+  const res = await client.put(`/api-keys/${id}`, data);
+  return res.data;
+}
+
+/** 删除 API Key */
+export async function deleteAPIKey(id: number): Promise<void> {
+  await client.delete(`/api-keys/${id}`);
+}
