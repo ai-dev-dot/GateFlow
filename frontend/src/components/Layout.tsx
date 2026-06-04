@@ -8,6 +8,7 @@ import {
   UserOutlined,
   AuditOutlined,
   BarChartOutlined,
+  KeyOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -23,6 +24,7 @@ const menuItems = [
   { key: '/users', icon: <UserOutlined />, label: '人员管理' },
   { key: '/audit', icon: <AuditOutlined />, label: '审批中心' },
   { key: '/usage', icon: <BarChartOutlined />, label: '使用统计' },
+  { key: '/api-keys', icon: <KeyOutlined />, label: 'API Key' },
 ]
 
 export default function AppLayout() {

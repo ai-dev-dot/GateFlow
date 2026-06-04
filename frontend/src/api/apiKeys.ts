@@ -21,7 +21,7 @@ export async function createAPIKey(data: {
 /** 更新 API Key */
 export async function updateAPIKey(
   id: string,
-  data: Partial<Pick<APIKey, 'name' | 'is_active' | 'rate_limit' | 'expires_at'>>,
+  data: Partial<Pick<APIKey, 'name' | 'is_active' | 'rate_limit' | 'expires_at' | 'permissions'>>,
 ): Promise<APIKey> {
   const res = await client.put(`/api-keys/${id}`, data);
   return res.data;

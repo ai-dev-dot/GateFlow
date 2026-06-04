@@ -8,6 +8,7 @@ import Gateway from './pages/Gateway'
 import Users from './pages/Users'
 import Audit from './pages/Audit'
 import Usage from './pages/Usage'
+import ApiKeys from './pages/ApiKeys'
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
         <Route path="users" element={<Users />} />
         <Route path="audit" element={<Audit />} />
         <Route path="usage" element={<Usage />} />
+        <Route path="api-keys" element={<ApiKeys />} />
       </Route>
     </Routes>
   )
