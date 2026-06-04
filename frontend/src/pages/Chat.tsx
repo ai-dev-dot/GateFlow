@@ -64,7 +64,7 @@ function groupConversations(list: Conversation[]): { label: DateGroup; items: Co
 export default function Chat() {
   /* ---- state ---- */
   const [models, setModels] = useState<ModelConfig[]>([])
-  const [selectedModelId, setSelectedModelId] = useState<number | undefined>()
+  const [selectedModelId, setSelectedModelId] = useState<string | undefined>()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeConvId, setActiveConvId] = useState<number | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -85,7 +85,7 @@ export default function Chat() {
   useEffect(() => {
     listModels({ page: 1, page_size: 100 })
       .then((res) => {
-        const enabled = res.items.filter((m) => m.is_enabled)
+        const enabled = res.items.filter((m) => m.is_active)
         setModels(enabled)
         if (enabled.length > 0) setSelectedModelId(enabled[0].id)
       })
@@ -227,7 +227,7 @@ export default function Chat() {
               onChange={setSelectedModelId}
               options={models.map((m) => ({
                 value: m.id,
-                label: m.display_name || m.model_name,
+                label: m.model_alias,
               }))}
               size="small"
             />

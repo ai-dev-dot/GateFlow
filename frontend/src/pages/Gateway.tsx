@@ -72,17 +72,19 @@ function ModelConfigTab() {
   const handleEdit = (record: ModelConfig) => {
     setEditing(record);
     form.setFieldsValue({
-      display_name: record.display_name,
+      model_alias: record.model_alias,
       provider: record.provider,
-      model_name: record.model_name,
-      is_enabled: record.is_enabled,
-      max_tokens: record.max_tokens,
-      temperature: record.temperature,
+      target_model: record.target_model,
+      target_url: record.target_url,
+      is_active: record.is_active,
+      default_max_tokens: record.default_max_tokens,
+      default_temperature: record.default_temperature,
+      priority: record.priority,
     });
     setModalOpen(true);
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     try {
       await deleteModel(id);
       message.success('已删除');
@@ -112,9 +114,8 @@ function ModelConfigTab() {
   const columns: ColumnsType<ModelConfig> = [
     {
       title: '模型别名',
-      dataIndex: 'display_name',
-      key: 'display_name',
-      render: (val: string) => val || '-',
+      dataIndex: 'model_alias',
+      key: 'model_alias',
     },
     {
       title: '供应商',
@@ -123,13 +124,13 @@ function ModelConfigTab() {
     },
     {
       title: '目标模型',
-      dataIndex: 'model_name',
-      key: 'model_name',
+      dataIndex: 'target_model',
+      key: 'target_model',
     },
     {
       title: '状态',
-      dataIndex: 'is_enabled',
-      key: 'is_enabled',
+      dataIndex: 'is_active',
+      key: 'is_active',
       width: 80,
       render: (val: boolean) =>
         val ? <Tag color="green">启用</Tag> : <Tag color="default">禁用</Tag>,
@@ -190,10 +191,11 @@ function ModelConfigTab() {
       >
         <Form form={form} layout="vertical" preserve={false}>
           <Form.Item
-            name="display_name"
+            name="model_alias"
             label="模型别名"
+            rules={[{ required: true, message: '请输入模型别名' }]}
           >
-            <Input placeholder="可选，用于前端展示" />
+            <Input placeholder="用于前端展示的别名" />
           </Form.Item>
           <Form.Item
             name="provider"
@@ -203,26 +205,39 @@ function ModelConfigTab() {
             <Input placeholder="例如 openai、anthropic" />
           </Form.Item>
           <Form.Item
-            name="model_name"
+            name="target_model"
             label="目标模型"
             rules={[{ required: true, message: '请输入目标模型名称' }]}
           >
             <Input placeholder="例如 gpt-4o、claude-3-sonnet" />
           </Form.Item>
           <Form.Item
-            name="max_tokens"
+            name="target_url"
+            label="目标 URL"
+            rules={[{ required: true, message: '请输入目标 URL' }]}
+          >
+            <Input placeholder="例如 https://api.openai.com/v1" />
+          </Form.Item>
+          <Form.Item
+            name="priority"
+            label="优先级"
+          >
+            <InputNumber min={0} style={{ width: '100%' }} placeholder="默认 0" />
+          </Form.Item>
+          <Form.Item
+            name="default_max_tokens"
             label="最大 Token 数"
           >
             <InputNumber min={1} style={{ width: '100%' }} placeholder="可选" />
           </Form.Item>
           <Form.Item
-            name="temperature"
+            name="default_temperature"
             label="Temperature"
           >
             <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} placeholder="可选" />
           </Form.Item>
           <Form.Item
-            name="is_enabled"
+            name="is_active"
             label="状态"
             valuePropName="checked"
             initialValue={true}
@@ -277,12 +292,12 @@ function ProviderKeyTab() {
     form.setFieldsValue({
       name: record.name,
       is_active: record.is_active,
-      base_url: record.base_url,
+      remark: record.remark,
     });
     setModalOpen(true);
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     try {
       await deleteProviderKey(id);
       message.success('已删除');
@@ -318,15 +333,14 @@ function ProviderKeyTab() {
         await updateProviderKey(editing.id, {
           name: values.name,
           is_active: values.is_active,
-          base_url: values.base_url,
+          remark: values.remark,
         });
         message.success('已更新');
       } else {
         await createProviderKey({
           provider: values.provider,
           name: values.name,
-          api_key: values.api_key,
-          base_url: values.base_url,
+          key: values.key,
         });
         message.success('已创建');
       }
@@ -358,9 +372,9 @@ function ProviderKeyTab() {
     },
     {
       title: '密钥前缀',
-      dataIndex: 'key_prefix',
-      key: 'key_prefix',
-      render: (val: string) => val || '-',
+      dataIndex: 'key',
+      key: 'key',
+      render: (val: string) => val ? `${val.slice(0, 8)}...` : '-',
     },
     {
       title: '操作',
@@ -452,15 +466,15 @@ function ProviderKeyTab() {
           </Form.Item>
           {!editing && (
             <Form.Item
-              name="api_key"
+              name="key"
               label="API Key"
               rules={[{ required: true, message: '请输入 API Key' }]}
             >
               <Input.Password placeholder="sk-..." />
             </Form.Item>
           )}
-          <Form.Item name="base_url" label="Base URL">
-            <Input placeholder="可选，自定义 API 地址" />
+          <Form.Item name="remark" label="备注">
+            <Input placeholder="可选，密钥备注信息" />
           </Form.Item>
           {editing && (
             <Form.Item

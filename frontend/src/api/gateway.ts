@@ -20,7 +20,7 @@ export async function createModel(data: Partial<ModelConfig>): Promise<ModelConf
 
 /** 更新模型 */
 export async function updateModel(
-  id: number,
+  id: string,
   data: Partial<ModelConfig>,
 ): Promise<ModelConfig> {
   const res = await client.put(`/gateway/models/${id}`, data);
@@ -28,7 +28,7 @@ export async function updateModel(
 }
 
 /** 删除模型 */
-export async function deleteModel(id: number): Promise<void> {
+export async function deleteModel(id: string): Promise<void> {
   await client.delete(`/gateway/models/${id}`);
 }
 
@@ -47,8 +47,8 @@ export async function listProviderKeys(params?: {
 export async function createProviderKey(data: {
   provider: string;
   name: string;
-  api_key: string;
-  base_url?: string;
+  key: string;
+  remark?: string;
 }): Promise<ProviderKey> {
   const res = await client.post('/gateway/provider-keys', data);
   return res.data;
@@ -56,21 +56,21 @@ export async function createProviderKey(data: {
 
 /** 更新 Provider Key */
 export async function updateProviderKey(
-  id: number,
-  data: Partial<Pick<ProviderKey, 'name' | 'is_active' | 'base_url'>>,
+  id: string,
+  data: Partial<Pick<ProviderKey, 'name' | 'is_active' | 'remark' | 'rpm_limit' | 'tpm_limit'>>,
 ): Promise<ProviderKey> {
   const res = await client.put(`/gateway/provider-keys/${id}`, data);
   return res.data;
 }
 
 /** 删除 Provider Key */
-export async function deleteProviderKey(id: number): Promise<void> {
+export async function deleteProviderKey(id: string): Promise<void> {
   await client.delete(`/gateway/provider-keys/${id}`);
 }
 
 /** 重置 Provider Key */
 export async function resetProviderKey(
-  id: number,
+  id: string,
   data: { api_key: string },
 ): Promise<ProviderKey> {
   const res = await client.post(`/gateway/provider-keys/${id}/reset`, data);

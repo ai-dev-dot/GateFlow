@@ -85,14 +85,14 @@ export default function Users() {
     setEditing(record);
     form.setFieldsValue({
       email: record.email,
-      role_id: record.role?.id,
-      department_id: record.department?.id,
+      role_id: record.role_id,
+      department_id: record.department_id,
       is_active: record.is_active,
     });
     setModalOpen(true);
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     try {
       await deleteUser(id);
       message.success('已删除');
@@ -108,10 +108,8 @@ export default function Users() {
       if (editing) {
         await updateUser(editing.id, {
           email: values.email,
-          role: { id: values.role_id } as Role,
-          department: values.department_id
-            ? ({ id: values.department_id } as Department)
-            : undefined,
+          role_id: values.role_id,
+          department_id: values.department_id,
           is_active: values.is_active,
         });
         message.success('已更新');
@@ -120,10 +118,8 @@ export default function Users() {
           username: values.username,
           password: values.password,
           email: values.email,
-          role: { id: values.role_id } as Role,
-          department: values.department_id
-            ? ({ id: values.department_id } as Department)
-            : undefined,
+          role_id: values.role_id,
+          department_id: values.department_id,
         });
         message.success('已创建');
       }
@@ -147,19 +143,21 @@ export default function Users() {
     },
     {
       title: '角色',
-      dataIndex: ['role', 'name'],
       key: 'role',
       render: (_: unknown, record: User) => {
-        const name = record.role?.name || '-';
+        const role = roles.find((r) => r.id === record.role_id);
+        const name = role?.name || '-';
         const color = roleColorMap[name.toLowerCase()] || 'default';
         return <Tag color={color}>{name}</Tag>;
       },
     },
     {
       title: '部门',
-      dataIndex: ['department', 'name'],
       key: 'department',
-      render: (_: unknown, record: User) => record.department?.name || '-',
+      render: (_: unknown, record: User) => {
+        const dept = departments.find((d) => d.id === record.department_id);
+        return dept?.name || '-';
+      },
     },
     {
       title: '状态',

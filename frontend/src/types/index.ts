@@ -7,27 +7,26 @@
 // ---------------------
 
 export interface Role {
-  id: number;
+  id: string;
   name: string;
-  description?: string;
+  permissions?: string[];
 }
 
 export interface Department {
-  id: number;
+  id: string;
   name: string;
-  description?: string;
+  parent_id?: string;
 }
 
 export interface User {
-  id: number;
+  id: string;
   username: string;
   email: string;
-  display_name?: string;
   is_active: boolean;
-  role: Role;
-  department?: Department;
+  department_id?: string;
+  role_id?: string;
   created_at: string;
-  updated_at: string;
+  last_login?: string;
 }
 
 // ---------------------
@@ -35,15 +34,15 @@ export interface User {
 // ---------------------
 
 export interface APIKey {
-  id: number;
+  id: string;
   name: string;
-  key_prefix: string;
-  user: User;
-  is_active: boolean;
-  rate_limit?: number;
+  key: string;
+  permissions?: string[];
+  rate_limit: number;
   expires_at?: string;
+  is_active: boolean;
   created_at: string;
-  updated_at: string;
+  last_used_at?: string;
 }
 
 // ---------------------
@@ -51,25 +50,36 @@ export interface APIKey {
 // ---------------------
 
 export interface ProviderKey {
-  id: number;
+  id: string;
   provider: string;
+  key: string;
   name: string;
-  key_prefix: string;
+  remark?: string;
   is_active: boolean;
-  base_url?: string;
+  is_banned: boolean;
+  ban_reason?: string;
+  rpm_limit: number;
+  tpm_limit: number;
+  total_requests: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  consecutive_errors: number;
+  cool_down_until?: string;
+  last_used_at?: string;
   created_at: string;
   updated_at: string;
 }
 
 export interface ModelConfig {
-  id: number;
-  model_name: string;
+  id: string;
+  model_alias: string;
   provider: string;
-  display_name?: string;
-  is_enabled: boolean;
-  max_tokens?: number;
-  temperature?: number;
-  provider_key?: ProviderKey;
+  target_model: string;
+  target_url: string;
+  is_active: boolean;
+  priority: number;
+  default_temperature?: number;
+  default_max_tokens?: number;
   created_at: string;
   updated_at: string;
 }

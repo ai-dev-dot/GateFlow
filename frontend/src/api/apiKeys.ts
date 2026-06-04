@@ -13,17 +13,17 @@ export async function listAPIKeys(params?: {
 /** 创建 API Key */
 export async function createAPIKey(data: {
   name: string;
-  user_id: number;
+  permissions?: string[];
   rate_limit?: number;
   expires_at?: string;
-}): Promise<APIKey & { key: string }> {
+}): Promise<APIKey> {
   const res = await client.post('/api-keys', data);
   return res.data;
 }
 
 /** 更新 API Key */
 export async function updateAPIKey(
-  id: number,
+  id: string,
   data: Partial<Pick<APIKey, 'name' | 'is_active' | 'rate_limit' | 'expires_at'>>,
 ): Promise<APIKey> {
   const res = await client.put(`/api-keys/${id}`, data);
@@ -31,6 +31,6 @@ export async function updateAPIKey(
 }
 
 /** 删除 API Key */
-export async function deleteAPIKey(id: number): Promise<void> {
+export async function deleteAPIKey(id: string): Promise<void> {
   await client.delete(`/api-keys/${id}`);
 }

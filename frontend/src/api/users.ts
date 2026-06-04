@@ -13,19 +13,25 @@ export async function listUsers(params?: {
 }
 
 /** 创建用户 */
-export async function createUser(data: Partial<User> & { password: string }): Promise<User> {
+export async function createUser(data: {
+  username: string;
+  password: string;
+  email: string;
+  role_id: string;
+  department_id?: string;
+}): Promise<User> {
   const res = await client.post('/users', data);
   return res.data;
 }
 
 /** 更新用户 */
-export async function updateUser(id: number, data: Partial<User>): Promise<User> {
+export async function updateUser(id: string, data: Partial<User>): Promise<User> {
   const res = await client.put(`/users/${id}`, data);
   return res.data;
 }
 
 /** 删除用户 */
-export async function deleteUser(id: number): Promise<void> {
+export async function deleteUser(id: string): Promise<void> {
   await client.delete(`/users/${id}`);
 }
 

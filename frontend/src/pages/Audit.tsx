@@ -189,8 +189,8 @@ export default function Audit() {
             setPage(1);
           }}
           options={models.map((m) => ({
-            value: m.model_name,
-            label: m.display_name || m.model_name,
+            value: m.model_alias,
+            label: m.model_alias,
           }))}
         />
         <RangePicker
