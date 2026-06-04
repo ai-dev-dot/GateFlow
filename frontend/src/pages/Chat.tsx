@@ -22,7 +22,7 @@ import {
   listConversations,
   createConversation,
   getMessages,
-  sendMessage,
+  sendMessageStream,
   deleteConversation,
 } from '@/api/chat'
 import type { ModelConfig, Conversation, Message } from '@/types'
@@ -154,7 +154,7 @@ export default function Chat() {
     }
   }
 
-  /* ---- 发送消息 ---- */
+  /* ---- 发送消息（流式） ---- */
   const handleSend = async () => {
     const text = inputValue.trim()
     if (!text || !activeConvId || sending) return
@@ -162,25 +162,62 @@ export default function Chat() {
     setSending(true)
     setInputValue('')
 
+    const ts = Date.now()
     // 乐观插入用户消息
     const tempUserMsg: Message = {
-      id: String(Date.now()),
+      id: `temp-user-${ts}`,
       conversation_id: activeConvId,
       role: 'user',
       content: text,
       created_at: new Date().toISOString(),
     }
-    setMessages((prev) => [...prev, tempUserMsg])
+    // 空的 AI 回复占位（流式填充）
+    const tempAssistantMsg: Message = {
+      id: `temp-assistant-${ts}`,
+      conversation_id: activeConvId,
+      role: 'assistant',
+      content: '',
+      created_at: new Date().toISOString(),
+    }
+    setMessages((prev) => [...prev, tempUserMsg, tempAssistantMsg])
 
     try {
-      await sendMessage(activeConvId, { content: text })
-      // 重新加载消息以获取完整的用户消息和 AI 回复
-      const res = await getMessages(activeConvId)
-      setMessages(res)
+      await sendMessageStream(
+        activeConvId,
+        { content: text },
+        // onChunk: 追加增量内容
+        (chunk) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === tempAssistantMsg.id
+                ? { ...m, content: m.content + chunk }
+                : m,
+            ),
+          )
+        },
+        // onDone: 流结束，重新加载以获取服务端持久化的消息
+        () => {
+          getMessages(activeConvId)
+            .then((res) => setMessages(res))
+            .catch(() => {})
+        },
+        // onError
+        (err) => {
+          message.error('发送失败: ' + err.message)
+          setMessages((prev) =>
+            prev.filter(
+              (m) => m.id !== tempUserMsg.id && m.id !== tempAssistantMsg.id,
+            ),
+          )
+        },
+      )
     } catch {
       message.error('发送失败')
-      // 移除乐观插入的临时消息
-      setMessages((prev) => prev.filter((m) => m.id !== tempUserMsg.id))
+      setMessages((prev) =>
+        prev.filter(
+          (m) => m.id !== tempUserMsg.id && m.id !== tempAssistantMsg.id,
+        ),
+      )
     } finally {
       setSending(false)
       inputRef.current?.focus()
@@ -338,6 +375,12 @@ export default function Chat() {
           overflow: 'hidden',
         }}
       >
+        <style>{`
+          @keyframes gf-blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+          }
+        `}</style>
         {activeConvId ? (
           <>
             {/* 消息列表 */}
@@ -370,62 +413,81 @@ export default function Chat() {
                   </Text>
                 </div>
               ) : (
-                messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    style={{
-                      display: 'flex',
-                      justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                      marginBottom: 16,
-                    }}
-                  >
+                messages.map((msg) => {
+                  const isStreaming =
+                    sending &&
+                    msg.role === 'assistant' &&
+                    msg.id.startsWith('temp-assistant-')
+                  return (
                     <div
+                      key={msg.id}
                       style={{
                         display: 'flex',
-                        alignItems: 'flex-start',
-                        maxWidth: '70%',
-                        flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
+                        justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                        marginBottom: 16,
                       }}
                     >
-                      {/* 头像 */}
                       <div
                         style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: '50%',
                           display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                          margin: msg.role === 'user' ? '0 0 0 8px' : '0 8px 0 0',
-                          background: msg.role === 'user' ? '#1677ff' : '#f0f0f0',
-                          color: msg.role === 'user' ? '#fff' : '#666',
+                          alignItems: 'flex-start',
+                          maxWidth: '70%',
+                          flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
                         }}
                       >
-                        {msg.role === 'user' ? (
-                          <UserOutlined style={{ fontSize: 16 }} />
-                        ) : (
-                          <RobotOutlined style={{ fontSize: 16 }} />
-                        )}
-                      </div>
-                      {/* 气泡 */}
-                      <div
-                        style={{
-                          padding: '10px 14px',
-                          borderRadius: 12,
-                          background: msg.role === 'user' ? '#1677ff' : '#fff',
-                          color: msg.role === 'user' ? '#fff' : '#333',
-                          boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
-                          wordBreak: 'break-word',
-                          lineHeight: 1.6,
-                          whiteSpace: 'pre-wrap',
-                        }}
-                      >
-                        {msg.content}
+                        {/* 头像 */}
+                        <div
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: '50%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                            margin: msg.role === 'user' ? '0 0 0 8px' : '0 8px 0 0',
+                            background: msg.role === 'user' ? '#1677ff' : '#f0f0f0',
+                            color: msg.role === 'user' ? '#fff' : '#666',
+                          }}
+                        >
+                          {msg.role === 'user' ? (
+                            <UserOutlined style={{ fontSize: 16 }} />
+                          ) : (
+                            <RobotOutlined style={{ fontSize: 16 }} />
+                          )}
+                        </div>
+                        {/* 气泡 */}
+                        <div
+                          style={{
+                            padding: '10px 14px',
+                            borderRadius: 12,
+                            background: msg.role === 'user' ? '#1677ff' : '#fff',
+                            color: msg.role === 'user' ? '#fff' : '#333',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+                            wordBreak: 'break-word',
+                            lineHeight: 1.6,
+                            whiteSpace: 'pre-wrap',
+                          }}
+                        >
+                          {msg.content}
+                          {isStreaming && (
+                            <span
+                              style={{
+                                display: 'inline-block',
+                                width: 7,
+                                height: 16,
+                                background: '#333',
+                                marginLeft: 2,
+                                verticalAlign: 'text-bottom',
+                                animation: 'gf-blink 1s step-end infinite',
+                              }}
+                            />
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  )
+                })
               )}
               <div ref={messagesEndRef} />
             </div>
