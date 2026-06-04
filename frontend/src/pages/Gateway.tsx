@@ -46,18 +46,18 @@ function ModelConfigTab() {
   const [editing, setEditing] = useState<ModelConfig | null>(null);
   const [form] = Form.useForm();
 
-  const fetchData = useCallback(async (p = page) => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await listModels({ page: p, page_size: 20 });
-      setData(res.items);
-      setTotal(res.total);
+      const res = await listModels();
+      setData(res);
+      setTotal(res.length);
     } catch {
       // 错误由拦截器处理
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, []);
 
   useEffect(() => {
     fetchData();
@@ -264,18 +264,18 @@ function ProviderKeyTab() {
   const [form] = Form.useForm();
   const [resetForm] = Form.useForm();
 
-  const fetchData = useCallback(async (p = page) => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await listProviderKeys({ page: p, page_size: 20 });
-      setData(res.items);
-      setTotal(res.total);
+      const res = await listProviderKeys();
+      setData(res);
+      setTotal(res.length);
     } catch {
       // 错误由拦截器处理
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, []);
 
   useEffect(() => {
     fetchData();

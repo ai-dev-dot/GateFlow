@@ -31,7 +31,7 @@ export default function Dashboard() {
         const [modelRes, deptRes, models, depts] = await Promise.all([
           getSummary({ dimension: 'model', start_date: startDate }),
           getSummary({ dimension: 'department', start_date: startDate }),
-          listModels({ page_size: 999 }),
+          listModels(),
           listDepartments(),
         ]);
 
@@ -44,7 +44,7 @@ export default function Dashboard() {
         setTotalRequests(reqSum);
         setTotalTokens(tokSum);
 
-        setModelCount(models.total ?? models.items.length);
+        setModelCount(models.length);
         setDeptCount(depts.length);
       } catch {
         // 错误已由 axios 拦截器统一处理

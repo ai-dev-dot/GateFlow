@@ -1,14 +1,11 @@
 import client from './client';
-import type { ModelConfig, ProviderKey, PaginatedResponse } from '../types';
+import type { ModelConfig, ProviderKey } from '../types';
 
 // ---- 模型配置 ----
 
-/** 模型列表 */
-export async function listModels(params?: {
-  page?: number;
-  page_size?: number;
-}): Promise<PaginatedResponse<ModelConfig>> {
-  const res = await client.get('/gateway/models', { params });
+/** 模型列表（后端返回数组） */
+export async function listModels(): Promise<ModelConfig[]> {
+  const res = await client.get('/gateway/models');
   return res.data;
 }
 
@@ -34,12 +31,9 @@ export async function deleteModel(id: string): Promise<void> {
 
 // ---- Provider Key ----
 
-/** Provider Key 列表 */
-export async function listProviderKeys(params?: {
-  page?: number;
-  page_size?: number;
-}): Promise<PaginatedResponse<ProviderKey>> {
-  const res = await client.get('/gateway/provider-keys', { params });
+/** Provider Key 列表（后端返回数组） */
+export async function listProviderKeys(): Promise<ProviderKey[]> {
+  const res = await client.get('/gateway/provider-keys');
   return res.data;
 }
 

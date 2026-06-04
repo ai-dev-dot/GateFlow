@@ -89,7 +89,7 @@ export interface ModelConfig {
 // ---------------------
 
 export interface Conversation {
-  id: number;
+  id: string;
   title: string;
   model?: ModelConfig;
   user: User;
@@ -98,8 +98,8 @@ export interface Conversation {
 }
 
 export interface Message {
-  id: number;
-  conversation_id: number;
+  id: string;
+  conversation_id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   tokens_used?: number;

@@ -67,8 +67,8 @@ export default function Audit() {
 
   const fetchModels = useCallback(async () => {
     try {
-      const res = await listModels({ page_size: 999 });
-      setModels(res.items);
+      const res = await listModels();
+      setModels(res);
     } catch {
       // 错误由拦截器处理
     }

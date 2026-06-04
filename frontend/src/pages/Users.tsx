@@ -41,21 +41,18 @@ export default function Users() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [form] = Form.useForm();
 
-  const fetchData = useCallback(
-    async (p = page) => {
-      setLoading(true);
-      try {
-        const res = await listUsers({ page: p, page_size: 20 });
-        setData(res.items);
-        setTotal(res.total);
-      } catch {
-        // 错误由拦截器处理
-      } finally {
-        setLoading(false);
-      }
-    },
-    [page],
-  );
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await listUsers();
+      setData(res);
+      setTotal(res.length);
+    } catch {
+      // 错误由拦截器处理
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   const fetchOptions = useCallback(async () => {
     try {

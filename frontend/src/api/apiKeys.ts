@@ -1,12 +1,9 @@
 import client from './client';
-import type { APIKey, PaginatedResponse } from '../types';
+import type { APIKey } from '../types';
 
-/** API Key 列表 */
-export async function listAPIKeys(params?: {
-  page?: number;
-  page_size?: number;
-}): Promise<PaginatedResponse<APIKey>> {
-  const res = await client.get('/api-keys', { params });
+/** API Key 列表（后端返回数组） */
+export async function listAPIKeys(): Promise<APIKey[]> {
+  const res = await client.get('/api-keys');
   return res.data;
 }
 

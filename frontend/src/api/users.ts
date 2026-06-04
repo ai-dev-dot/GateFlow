@@ -1,14 +1,11 @@
 import client from './client';
-import type { User, Role, Department, PaginatedResponse } from '../types';
+import type { User, Role, Department } from '../types';
 
 // ---- 用户 ----
 
-/** 用户列表 */
-export async function listUsers(params?: {
-  page?: number;
-  page_size?: number;
-}): Promise<PaginatedResponse<User>> {
-  const res = await client.get('/users', { params });
+/** 用户列表（后端返回数组） */
+export async function listUsers(): Promise<User[]> {
+  const res = await client.get('/users');
   return res.data;
 }
 

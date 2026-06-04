@@ -66,7 +66,7 @@ export default function Chat() {
   const [models, setModels] = useState<ModelConfig[]>([])
   const [selectedModelId, setSelectedModelId] = useState<string | undefined>()
   const [conversations, setConversations] = useState<Conversation[]>([])
-  const [activeConvId, setActiveConvId] = useState<number | null>(null)
+  const [activeConvId, setActiveConvId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState('')
   const [loadingConvs, setLoadingConvs] = useState(false)
@@ -83,9 +83,9 @@ export default function Chat() {
 
   /* ---- 加载模型列表 ---- */
   useEffect(() => {
-    listModels({ page: 1, page_size: 100 })
+    listModels()
       .then((res) => {
-        const enabled = res.items.filter((m) => m.is_active)
+        const enabled = res.filter((m) => m.is_active)
         setModels(enabled)
         if (enabled.length > 0) setSelectedModelId(enabled[0].id)
       })
@@ -96,8 +96,8 @@ export default function Chat() {
   const fetchConversations = useCallback(async () => {
     setLoadingConvs(true)
     try {
-      const res = await listConversations({ page: 1, page_size: 200 })
-      setConversations(res.items)
+      const res = await listConversations()
+      setConversations(res)
     } catch {
       // ignore
     } finally {
@@ -116,8 +116,8 @@ export default function Chat() {
       return
     }
     setLoadingMsgs(true)
-    getMessages(activeConvId, { page: 1, page_size: 200 })
-      .then((res) => setMessages(res.items))
+    getMessages(activeConvId)
+      .then((res) => setMessages(res))
       .catch(() => message.error('加载消息失败'))
       .finally(() => setLoadingMsgs(false))
   }, [activeConvId])
@@ -140,7 +140,7 @@ export default function Chat() {
   }
 
   /* ---- 删除会话 ---- */
-  const handleDeleteConversation = async (id: number) => {
+  const handleDeleteConversation = async (id: string) => {
     try {
       await deleteConversation(id)
       setConversations((prev) => prev.filter((c) => c.id !== id))
@@ -164,7 +164,7 @@ export default function Chat() {
 
     // 乐观插入用户消息
     const tempUserMsg: Message = {
-      id: Date.now(),
+      id: String(Date.now()),
       conversation_id: activeConvId,
       role: 'user',
       content: text,
@@ -175,8 +175,8 @@ export default function Chat() {
     try {
       await sendMessage(activeConvId, { content: text })
       // 重新加载消息以获取完整的用户消息和 AI 回复
-      const res = await getMessages(activeConvId, { page: 1, page_size: 200 })
-      setMessages(res.items)
+      const res = await getMessages(activeConvId)
+      setMessages(res)
     } catch {
       message.error('发送失败')
       // 移除乐观插入的临时消息
