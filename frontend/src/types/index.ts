@@ -133,6 +133,19 @@ export interface UsageSummary {
   period_end: string;
 }
 
+export interface UsageSummaryItem {
+  dimension: string;
+  request_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+}
+
+export interface UsageSummaryResponse {
+  dimension: string;
+  items: UsageSummaryItem[];
+}
+
 // ---------------------
 // 认证
 // ---------------------
