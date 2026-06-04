@@ -124,6 +124,7 @@ GateFlow/
 │   │   ├── models/                # SQLAlchemy 数据模型
 │   │   │   ├── user.py            # 用户、角色、权限模型
 │   │   │   ├── api_key.py         # 用户 API Key 模型
+│   │   │   ├── provider_key.py    # 上游 API Key 模型
 │   │   │   ├── gateway.py         # 模型路由配置
 │   │   │   ├── chat.py            # 对话、消息模型
 │   │   │   ├── audit.py           # 请求日志模型
@@ -131,6 +132,7 @@ GateFlow/
 │   │   ├── schemas/               # Pydantic 请求/响应模型
 │   │   │   ├── user.py
 │   │   │   ├── api_key.py
+│   │   │   ├── provider_key.py
 │   │   │   ├── gateway.py
 │   │   │   ├── chat.py
 │   │   │   ├── audit.py
@@ -138,14 +140,16 @@ GateFlow/
 │   │   ├── routers/               # API 路由
 │   │   │   ├── auth.py            # 登录、注册、Token
 │   │   │   ├── users.py           # 用户管理
-│   │   │   ├── api_keys.py        # API Key 管理
+│   │   │   ├── api_keys.py        # 用户 API Key 管理
+│   │   │   ├── provider_keys.py   # 上游 API Key 管理
 │   │   │   ├── gateway.py         # 网关转发接口
 │   │   │   ├── chat.py            # 问答对话接口
 │   │   │   ├── audit.py           # 审计日志查询
 │   │   │   └── usage.py           # 用量统计
 │   │   ├── services/              # 业务逻辑
 │   │   │   ├── auth_service.py
-│   │   │   ├── gateway_service.py # 核心：转发、负载均衡
+│   │   │   ├── gateway_service.py # 核心：转发、智能调度
+│   │   │   ├── provider_key_service.py # API Key 池管理
 │   │   │   ├── chat_service.py    # 问答对话服务
 │   │   │   ├── audit_service.py
 │   │   │   └── usage_service.py
@@ -211,7 +215,7 @@ response = client.chat.completions.create(
 | `/v1/chat/completions` | POST | 对话补全（核心） |
 | `/v1/models` | GET | 获取可用模型列表 |
 
-### 4.3 路由逻辑
+### 4.3 路由与调度逻辑
 
 ```
 用户请求: POST /v1/chat/completions
@@ -224,11 +228,21 @@ response = client.chat.completions.create(
               │
               ▼
     ┌─────────────────┐     找到配置
-    │ 查询模型路由配置 ├──────────────┐
+    │ 查询 ModelConfig ├──────────────┐
     └────────┬────────┘              │
              │ 未找到                ▼
              ▼              ┌─────────────────┐
-    返回 404 错误           │ 选择可用 API Key │
+    返回 404 错误           │ 查询可用 API Key │
+                            │ (ProviderAPIKey) │
+                            └────────┬────────┘
+                                     │
+                                     ▼
+                            ┌─────────────────┐
+                            │ 智能选择 Key     │
+                            │ - 跳过已禁用     │
+                            │ - 跳过已封禁     │
+                            │ - 跳过冷却中     │
+                            │ - 优先选错误少的 │
                             └────────┬────────┘
                                      │
                                      ▼
@@ -236,6 +250,18 @@ response = client.chat.completions.create(
                             │ 转发到目标 API   │
                             └────────┬────────┘
                                      │
+                         ┌───────────┴───────────┐
+                         │                       │
+                         ▼                       ▼
+                    成功                    失败(429/401/5xx)
+                         │                       │
+                         ▼                       ▼
+                ┌─────────────────┐    ┌─────────────────┐
+                │ 更新 Key 统计   │    │ 自动冷却/封禁   │
+                │ 重置错误计数    │    │ 记录错误信息    │
+                └────────┬────────┘    └────────┬────────┘
+                         │                       │
+                         └───────────┬───────────┘
                                      ▼
                             ┌─────────────────┐
                             │ 记录日志 + 统计  │
@@ -245,20 +271,99 @@ response = client.chat.completions.create(
                             返回响应给用户
 ```
 
+**智能 Key 选择算法（MVP）：**
+
+```python
+async def get_available_api_key(provider: str) -> ProviderAPIKey:
+    """获取可用的 API Key，采用故障转移策略"""
+    
+    keys = await db.execute(
+        select(ProviderAPIKey)
+        .where(
+            ProviderAPIKey.provider == provider,
+            ProviderAPIKey.is_active == True,
+            ProviderAPIKey.is_banned == False,
+            (ProviderAPIKey.cool_down_until == None) | 
+            (ProviderAPIKey.cool_down_until < datetime.utcnow())
+        )
+        .order_by(ProviderAPIKey.consecutive_errors, ProviderAPIKey.last_used_at)
+    ).scalars().all()
+    
+    if not keys:
+        raise HTTPException(503, f"提供商 {provider} 没有可用的 API Key")
+    
+    return keys[0]  # 选择错误最少、最久未使用的 Key
+```
+
+**错误处理与自动冷却：**
+
+```python
+async def handle_api_key_error(key: ProviderAPIKey, error: Exception):
+    key.consecutive_errors += 1
+    key.last_error_at = datetime.utcnow()
+    
+    if isinstance(error, RateLimitError):  # 429
+        key.cool_down_until = datetime.utcnow() + timedelta(minutes=1)
+    elif isinstance(error, AuthenticationError):  # 401
+        key.is_banned = True
+        key.ban_reason = "上游返回 401 Unauthorized"
+    elif key.consecutive_errors >= 10:
+        key.cool_down_until = datetime.utcnow() + timedelta(minutes=10)
+    
+    await db.commit()
+```
+
 ### 4.4 模型路由配置
 
-数据库存储模型路由配置：
+**模型配置表（ModelConfig）：**
 
 | 字段 | 类型 | 说明 | 示例 |
 |-----|------|------|------|
 | id | UUID | 主键 | - |
-| model_alias | string | 用户请求的模型名 | `deepseek-chat` |
+| model_alias | string | 用户请求的模型名（唯一） | `deepseek-chat` |
 | provider | string | 提供商标识 | `deepseek` |
+| target_model | string | 上游实际模型名 | `deepseek-chat` |
 | target_url | string | 实际 API 地址 | `https://api.deepseek.com/v1` |
-| api_keys | JSON | API Key 池 | `["sk-xxx", "sk-yyy"]` |
 | is_active | bool | 是否启用 | `true` |
-| rate_limit | int | 速率限制 (req/min) | `60` |
+| priority | int | 模型优先级（数字越小越优先） | `0` |
+| default_temperature | float | 默认温度参数 | `0.7` |
+| default_max_tokens | int | 默认最大 token 数 | `4096` |
 | created_at | datetime | 创建时间 | - |
+
+**上游 API Key 表（ProviderAPIKey）— 独立表，非 JSON 数组：**
+
+| 字段 | 类型 | 说明 | 示例 |
+|-----|------|------|------|
+| id | UUID | 主键 | - |
+| provider | string | 提供商标识（索引） | `deepseek` |
+| key | string(255) | 上游 API Key（唯一） | `sk-xxx...` |
+| name | string | Key 名称 | `DeepSeek-企业版-1号` |
+| remark | string | 备注（用途、负责人） | `技术部专用 Key` |
+| is_active | bool | 是否启用（索引） | `true` |
+| is_banned | bool | 是否被上游封禁 | `false` |
+| ban_reason | string | 封禁原因 | - |
+| rpm_limit | int | 每分钟请求数限制 | `60` |
+| tpm_limit | int | 每分钟 Token 数限制 | `100000` |
+| total_requests | bigint | 总请求数 | `12500` |
+| total_input_tokens | bigint | 总输入 Token 数 | `5200000` |
+| total_output_tokens | bigint | 总输出 Token 数 | `3100000` |
+| consecutive_errors | int | 连续错误次数 | `0` |
+| cool_down_until | datetime | 冷却截止时间 | - |
+| created_at | datetime | 创建时间 | - |
+| last_used_at | datetime | 最后使用时间（索引） | - |
+
+**核心关系：**
+- 一个 `provider` 对应多个 `ProviderAPIKey`
+- 一个 `ModelConfig` 对应一个 `provider`
+- API Key 与模型配置完全解耦
+
+**为什么必须用独立表而非 JSON 数组：**
+1. ✅ 可以单独启用/禁用某个 Key
+2. ✅ 可以单独设置每个 Key 的速率限制
+3. ✅ 可以追踪每个 Key 的用量和错误
+4. ✅ 可以实现智能故障转移（自动冷却失败的 Key）
+5. ✅ 可以按 Key 维度审计和统计
+6. ❌ JSON 数组无法做到以上任何一点
 
 ### 4.5 流式响应处理
 
@@ -670,12 +775,24 @@ GET /api/usage/summary?
 
 ### 9.4 网关管理（admin）
 
+**模型路由管理：**
+
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/api/gateway/models` | GET | 模型路由列表 |
 | `/api/gateway/models` | POST | 添加模型路由 |
 | `/api/gateway/models/{id}` | PUT | 更新模型路由 |
 | `/api/gateway/models/{id}` | DELETE | 删除模型路由 |
+
+**上游 API Key 管理（ProviderAPIKey）：**
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/gateway/provider-keys` | GET | 上游 API Key 列表（支持按 provider 筛选） |
+| `/api/gateway/provider-keys` | POST | 添加上游 API Key |
+| `/api/gateway/provider-keys/{id}` | PUT | 更新 Key（名称、备注、限速、启用/禁用） |
+| `/api/gateway/provider-keys/{id}` | DELETE | 删除 Key |
+| `/api/gateway/provider-keys/{id}/reset` | POST | 重置 Key 状态（清除错误计数、解封） |
 
 ### 9.5 网关转发
 
