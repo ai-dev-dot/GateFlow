@@ -2,6 +2,7 @@ from typing import List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -83,6 +84,26 @@ async def send_message(
     if not message:
         raise HTTPException(status_code=404, detail="对话不存在")
     return message
+
+
+@router.post(
+    "/conversations/{conversation_id}/messages/stream",
+    response_class=StreamingResponse,
+)
+async def send_message_stream(
+    conversation_id: UUID,
+    body: MessageCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """发送消息并以 SSE 流式返回 AI 回复（打字机效果）"""
+    service = ChatService(db)
+    response = await service.send_message_stream(
+        conversation_id, current_user, body.content
+    )
+    if not response:
+        raise HTTPException(status_code=404, detail="对话不存在")
+    return response
 
 
 @router.delete("/conversations/{conversation_id}", status_code=204)
