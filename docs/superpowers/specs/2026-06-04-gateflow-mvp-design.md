@@ -332,14 +332,14 @@ async def stream_response(upstream_response):
 
 | 认证方式 | 使用场景 | 特点 |
 |---------|---------|------|
-| **JWT Token** | 前端页面（问答、管理后台） | 有有效期（24h），自动刷新 |
+| **JWT Token** | 前端页面（问答、管理后台） | 有有效期（默认 7 天，后台可配置），自动刷新 |
 | **API Key** | 工具/系统集成（Dify、Cursor、业务系统） | 永久有效，可随时吊销 |
 
 **JWT Token（前端使用）：**
 ```
 1. 用户登录: POST /api/auth/login
    → 验证用户名密码
-   → 返回 JWT Token (有效期 24h)
+   → 返回 JWT Token (有效期默认 7 天，可在后台配置)
 
 2. 前端请求: 自动携带 Cookie/LocalStorage 中的 Token
    → 中间件验证 JWT
