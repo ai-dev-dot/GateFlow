@@ -71,6 +71,14 @@ class AuditService:
         log.status = "completed" if status_code < 400 else "error"
         await self.db.flush()
 
+    async def get_log_by_id(self, log_id: UUID, user) -> AuditLog | None:
+        """Get audit log by ID, non-admin can only see own logs"""
+        query = select(AuditLog).where(AuditLog.id == log_id)
+        if user.role.name != "admin":
+            query = query.where(AuditLog.user_id == user.id)
+        result = await self.db.execute(query)
+        return result.scalar_one_or_none()
+
     async def get_logs(
         self,
         user_id: Optional[UUID] = None,

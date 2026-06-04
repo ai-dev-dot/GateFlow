@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -66,3 +66,17 @@ async def get_audit_logs(
             for log in result["items"]
         ],
     }
+
+
+@router.get("/logs/{log_id}")
+async def get_log_detail(
+    log_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取审计日志详情"""
+    audit_service = AuditService(db)
+    log = await audit_service.get_log_by_id(log_id, user)
+    if not log:
+        raise HTTPException(status_code=404, detail="日志不存在")
+    return log
