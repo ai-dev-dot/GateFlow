@@ -8,9 +8,13 @@ export async function listAuditLogs(params?: {
   action?: string;
   resource_type?: string;
   user_id?: number;
+  model?: string;
   start_date?: string;
   end_date?: string;
 }): Promise<PaginatedResponse<AuditLog>> {
   const res = await client.get('/audit/logs', { params });
   return res.data;
 }
+
+/** 审计日志列表 (别名) */
+export const listLogs = listAuditLogs;

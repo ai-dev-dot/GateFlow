@@ -109,6 +109,13 @@ export interface AuditLog {
   detail?: string;
   ip_address?: string;
   created_at: string;
+  // 网关请求日志扩展字段
+  model?: string;
+  status?: string;
+  request_tokens?: number;
+  response_tokens?: number;
+  latency_ms?: number;
+  status_code?: number;
 }
 
 // ---------------------
