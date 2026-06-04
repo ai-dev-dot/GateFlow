@@ -8,6 +8,7 @@ from app.routers.gateway import router as gateway_router
 from app.routers.gateway_forward import router as gateway_forward_router
 from app.routers.audit import router as audit_router
 from app.routers.usage import router as usage_router
+from app.routers.chat import router as chat_router
 
 app = FastAPI(title="闸机 GateFlow", version="0.1.0")
 
@@ -28,6 +29,7 @@ app.include_router(gateway_router)
 app.include_router(gateway_forward_router)
 app.include_router(audit_router)
 app.include_router(usage_router)
+app.include_router(chat_router)
 
 
 @app.get("/health")
