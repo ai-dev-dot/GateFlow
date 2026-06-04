@@ -12,7 +12,7 @@ const client = axios.create({
 // 请求拦截器：自动添加 Bearer token
 client.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('access_token');
+    const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -29,7 +29,7 @@ client.interceptors.response.use(
 
     if (status === 401) {
       // 清除本地 token 并跳转登录页
-      localStorage.removeItem('access_token');
+      localStorage.removeItem('token');
       localStorage.removeItem('refresh_token');
       if (window.location.pathname !== '/login') {
         window.location.href = '/login';
