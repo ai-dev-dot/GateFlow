@@ -129,3 +129,29 @@ class UsageService:
             }
             for row in rows
         ]
+
+    async def get_trend(
+        self,
+        user_id: UUID | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> list:
+        """按日聚合用量趋势"""
+        query = select(
+            UsageStat.date,
+            func.sum(UsageStat.request_count).label("request_count"),
+            func.sum(UsageStat.input_tokens).label("input_tokens"),
+            func.sum(UsageStat.output_tokens).label("output_tokens"),
+            func.sum(UsageStat.total_tokens).label("total_tokens"),
+        )
+
+        if user_id:
+            query = query.where(UsageStat.user_id == user_id)
+        if start_date:
+            query = query.where(UsageStat.date >= start_date)
+        if end_date:
+            query = query.where(UsageStat.date <= end_date)
+
+        query = query.group_by(UsageStat.date).order_by(UsageStat.date)
+        result = await self.db.execute(query)
+        return result.all()
