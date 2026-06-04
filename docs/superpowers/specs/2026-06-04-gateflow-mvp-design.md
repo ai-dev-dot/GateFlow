@@ -784,8 +784,13 @@ GET /api/usage/summary?
 
 - React 18 + TypeScript
 - Ant Design 5
-- Umi（蚂蚁金服企业级前端框架）
+- Vite（构建工具，开发热更新 < 50ms）
+- React Router v6（路由管理）
+- Axios（HTTP 请求）
+- Zustand（轻量状态管理）
 - ECharts（图表库）
+
+> **注：** 设计稿原定使用 Umi 框架，但 MVP 阶段改用 Vite + React Router 更轻量、更灵活。Umi 适合大型项目（50+ 页面、多团队协作），MVP 只有 7 个页面，不需要约定式路由的复杂度。后期如需迁移，成本可控。
 
 ---
 
