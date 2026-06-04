@@ -3,6 +3,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models import User, APIKey
 from app.utils.security import decode_access_token
@@ -36,7 +37,9 @@ async def get_current_user(
         api_key.last_used_at = datetime.utcnow()
         await db.commit()
 
-        result = await db.execute(select(User).where(User.id == api_key.user_id))
+        result = await db.execute(
+            select(User).where(User.id == api_key.user_id).options(selectinload(User.role))
+        )
         user = result.scalar_one_or_none()
     else:
         # JWT Token authentication
@@ -48,7 +51,9 @@ async def get_current_user(
         if not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="无效的 Token")
 
-        result = await db.execute(select(User).where(User.id == user_id))
+        result = await db.execute(
+            select(User).where(User.id == user_id).options(selectinload(User.role))
+        )
         user = result.scalar_one_or_none()
 
     if not user:

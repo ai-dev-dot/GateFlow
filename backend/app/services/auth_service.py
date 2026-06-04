@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User, Role
 from app.utils.security import get_password_hash, verify_password, create_access_token
@@ -16,7 +17,7 @@ class AuthService:
     async def authenticate_user(self, username: str, password: str) -> Optional[User]:
         """验证用户凭据，成功则更新 last_login 并返回 User"""
         result = await self.db.execute(
-            select(User).where(User.username == username)
+            select(User).where(User.username == username).options(selectinload(User.role))
         )
         user = result.scalar_one_or_none()
 

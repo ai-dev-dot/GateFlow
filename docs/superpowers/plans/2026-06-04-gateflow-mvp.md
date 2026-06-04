@@ -93,24 +93,24 @@ GateFlow/
 
 ```txt
 # backend/requirements.txt
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-sqlalchemy[asyncio]==2.0.25
-asyncpg==0.29.0
-alembic==1.13.1
-pydantic==2.5.3
-pydantic-settings==2.1.0
-python-jose[cryptography]==3.3.0
+fastapi==0.136.3
+uvicorn[standard]==0.48.0
+sqlalchemy[asyncio]==2.0.50
+asyncpg==0.31.0
+alembic==1.18.4
+pydantic==2.13.4
+pydantic-settings==2.14.1
+python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
-httpx==0.26.0
-python-multipart==0.0.6
+httpx==0.28.1
+python-multipart==0.0.30
 ```
 
 - [ ] **Step 2: 创建 .env.example**
 
 ```bash
 # backend/.env.example
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/gateflow
+DATABASE_URL=postgresql+asyncpg://Think:pg123456@localhost:5432/gateflow_test
 JWT_SECRET_KEY=your-secret-key-change-in-production
 JWT_EXPIRE_DAYS=7
 ADMIN_USERNAME=admin
