@@ -262,12 +262,55 @@ response = client.chat.completions.create(
 
 ### 4.5 流式响应处理
 
-采用直接透传策略，网关零延迟：
+采用直接透传策略，网关零延迟。同时解决流式响应的日志记录问题：
+
+**核心问题：** 流式响应的 token 数量只有在响应结束后才能统计。
+
+**解决方案：** 先创建待处理日志，响应结束后异步更新。
 
 ```python
-async def stream_response(upstream_response):
-    async for chunk in upstream_response.aiter_bytes():
-        yield chunk  # 收到一块就转发一块
+async def forward_stream_request(user, model, request_body):
+    # 1. 先创建一个不完整的日志记录（token 数量未知）
+    log_id = await audit_service.create_pending_log(
+        user_id=user.id,
+        model=model,
+        request_body=request_body
+    )
+    start_time = time.time()
+    
+    # 2. 转发请求并流式返回
+    async with httpx.AsyncClient() as client:
+        async with client.stream("POST", target_url, json=request_body) as response:
+            full_response = ""
+            async for chunk in response.aiter_bytes():
+                yield chunk  # 收到一块就转发一块，用户无感知延迟
+                full_response += chunk.decode("utf-8")
+            
+            # 3. 响应结束后，异步更新日志和用量统计
+            await audit_service.update_log_after_response(
+                log_id=log_id,
+                status_code=response.status_code,
+                request_tokens=count_tokens(request_body["messages"]),
+                response_tokens=count_tokens(full_response),
+                latency_ms=int((time.time() - start_time) * 1000)
+            )
+            
+            # 4. 更新用户用量统计
+            await usage_service.record_usage(
+                user_id=user.id,
+                model=model,
+                input_tokens=request_tokens,
+                output_tokens=response_tokens
+            )
+```
+
+**日志状态流转：**
+```
+请求开始 → 创建日志 (status="pending", tokens=0)
+    ↓
+流式响应中 → 用户收到数据，日志暂不更新
+    ↓
+响应结束 → 更新日志 (status="completed", tokens=实际值)
 ```
 
 ### 4.6 协议设计
@@ -417,23 +460,27 @@ async def stream_response(upstream_response):
 | 字段 | 类型 | 说明 |
 |-----|------|------|
 | id | UUID | 主键 |
+| status | string | 日志状态：`pending`（响应中）/ `completed`（已完成）/ `failed`（失败） |
 | timestamp | datetime | 请求时间 |
 | user_id | UUID | 用户 ID |
 | username | string | 用户名 |
 | department | string | 部门名 |
+| api_key_id | UUID | 使用的 API Key ID（可选） |
 | model | string | 请求的模型 |
 | provider | string | 提供商 |
 | method | string | HTTP 方法 |
 | path | string | 请求路径 |
 | request_body | text | 请求体（完整记录） |
-| request_tokens | int | 输入 Token 数 |
-| response_tokens | int | 输出 Token 数 |
+| request_tokens | int | 输入 Token 数（流式响应结束后更新） |
+| response_tokens | int | 输出 Token 数（流式响应结束后更新） |
 | total_tokens | int | 总 Token 数 |
 | latency_ms | int | 响应耗时（毫秒） |
 | status_code | int | HTTP 状态码 |
 | is_stream | bool | 是否流式请求 |
 | ip_address | string | 客户端 IP |
 | user_agent | string | 客户端 User-Agent |
+| created_at | datetime | 日志创建时间 |
+| completed_at | datetime | 日志完成时间（流式响应结束后更新） |
 
 ### 6.2 日志查询 API
 
