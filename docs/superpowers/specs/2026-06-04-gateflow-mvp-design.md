@@ -443,12 +443,33 @@ async def forward_stream_request(user, model, request_body):
 | id | UUID | 主键 |
 | username | string | 用户名（唯一） |
 | email | string | 邮箱（唯一） |
-| hashed_password | string | 加密后的密码 |
+| hashed_password | string | bcrypt 加密后的密码（60 字符） |
 | department_id | UUID | 所属部门 |
 | role_id | UUID | 角色 |
 | is_active | bool | 是否启用 |
 | created_at | datetime | 创建时间 |
 | last_login | datetime | 最后登录时间 |
+
+**密码加密实现（bcrypt）：**
+
+```python
+# utils/security.py
+from passlib.context import CryptContext
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def get_password_hash(password: str) -> str:
+    """生成密码哈希"""
+    return pwd_context.hash(password)
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """验证密码"""
+    return pwd_context.verify(plain_password, hashed_password)
+```
+
+**为什么用 bcrypt 而非 MD5/SHA256：**
+- ❌ MD5/SHA256：太快，暴力破解容易，无盐值
+- ✅ bcrypt：慢哈希（可调节计算轮数），自带盐值，抗彩虹表攻击
 
 **Role（角色）**
 
