@@ -67,7 +67,7 @@
 | 数据库 | PostgreSQL | 功能强大、JSON 支持好、企业级首选 |
 | 前端框架 | React 18 + TypeScript | 生态丰富、适合复杂管理后台 |
 | UI 组件库 | Ant Design 5 | 企业级设计、组件丰富、中文文档好 |
-| 认证方式 | JWT Token | 无状态、易扩展、前后端分离首选 |
+| 认证方式 | JWT Token + API Key | JWT 用于前端页面，API Key 用于工具/系统集成 |
 | API 协议 | OpenAI 兼容格式 | 国产模型都兼容、用户无需学习新 SDK |
 
 ### 2.1 性能考量
@@ -123,12 +123,14 @@ GateFlow/
 │   │   ├── database.py            # 数据库连接
 │   │   ├── models/                # SQLAlchemy 数据模型
 │   │   │   ├── user.py            # 用户、角色、权限模型
-│   │   │   ├── gateway.py         # API Key、模型配置
+│   │   │   ├── api_key.py         # 用户 API Key 模型
+│   │   │   ├── gateway.py         # 模型路由配置
 │   │   │   ├── chat.py            # 对话、消息模型
 │   │   │   ├── audit.py           # 请求日志模型
 │   │   │   └── usage.py           # 用量统计模型
 │   │   ├── schemas/               # Pydantic 请求/响应模型
 │   │   │   ├── user.py
+│   │   │   ├── api_key.py
 │   │   │   ├── gateway.py
 │   │   │   ├── chat.py
 │   │   │   ├── audit.py
@@ -136,6 +138,7 @@ GateFlow/
 │   │   ├── routers/               # API 路由
 │   │   │   ├── auth.py            # 登录、注册、Token
 │   │   │   ├── users.py           # 用户管理
+│   │   │   ├── api_keys.py        # API Key 管理
 │   │   │   ├── gateway.py         # 网关转发接口
 │   │   │   ├── chat.py            # 问答对话接口
 │   │   │   ├── audit.py           # 审计日志查询
@@ -147,7 +150,7 @@ GateFlow/
 │   │   │   ├── audit_service.py
 │   │   │   └── usage_service.py
 │   │   ├── middleware/            # 中间件
-│   │   │   ├── auth_middleware.py # JWT 认证
+│   │   │   ├── auth_middleware.py # JWT + API Key 双模认证
 │   │   │   └── logging_middleware.py # 请求日志
 │   │   └── utils/                 # 工具函数
 │   │       ├── security.py        # JWT、密码加密
@@ -190,7 +193,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="http://your-gateflow:8000/v1",
-    api_key="gf_user_xxx"  # 闸机发的 JWT Token
+    api_key="gf_xxxxxxxxxxxxxxxx"  # 在闸机后台创建的 API Key
 )
 
 response = client.chat.completions.create(
@@ -323,24 +326,65 @@ async def stream_response(upstream_response):
 | **user** | 调用 API、查看自己的日志和用量 |
 | **viewer** | 只读：查看日志和统计，不能调用 API |
 
-### 5.3 认证流程
+### 5.3 双模认证机制
 
+闸机支持两种认证方式，分别服务不同场景：
+
+| 认证方式 | 使用场景 | 特点 |
+|---------|---------|------|
+| **JWT Token** | 前端页面（问答、管理后台） | 有有效期（24h），自动刷新 |
+| **API Key** | 工具/系统集成（Dify、Cursor、业务系统） | 永久有效，可随时吊销 |
+
+**JWT Token（前端使用）：**
 ```
 1. 用户登录: POST /api/auth/login
    → 验证用户名密码
    → 返回 JWT Token (有效期 24h)
 
-2. API 调用: POST /v1/chat/completions
-   → Header: Authorization: Bearer <jwt_token>
-   → 中间件验证 Token
+2. 前端请求: 自动携带 Cookie/LocalStorage 中的 Token
+   → 中间件验证 JWT
    → 提取 user_id、role、permissions
-   → 检查权限
-
-3. Token 刷新: POST /api/auth/refresh
-   → 用旧 Token 换新 Token
 ```
 
-### 5.4 JWT Token 结构
+**API Key（工具/系统集成使用）：**
+```
+1. 用户在后台创建 API Key: POST /api/api-keys
+   → 返回 gf_xxxxxx 格式的 Key（只显示一次）
+
+2. 工具配置:
+   base_url = "http://your-gateflow:8000/v1"
+   api_key  = "gf_xxxxxx"
+
+3. API 调用: POST /v1/chat/completions
+   → Header: Authorization: Bearer gf_xxxxxx
+   → 中间件识别 gf_ 前缀，走 API Key 验证
+   → 查询 api_keys 表，验证 Key 有效性和权限
+```
+
+### 5.4 API Key 数据模型
+
+**APIKey（用户 API Key）**
+
+| 字段 | 类型 | 说明 |
+|-----|------|------|
+| id | UUID | 主键 |
+| user_id | UUID | 所属用户 |
+| name | string | Key 名称（如"我的 Cursor Key"） |
+| key | string(64) | Key 值，`gf_` 前缀 + 60 位随机字符，唯一 |
+| permissions | JSON | 权限列表（可限制可用模型） |
+| rate_limit | int | 每分钟请求数限制 |
+| expires_at | datetime | 过期时间（可选，空=永不过期） |
+| is_active | bool | 是否启用 |
+| created_at | datetime | 创建时间 |
+| last_used_at | datetime | 最后使用时间 |
+
+**Key 生成规则：**
+```
+格式: gf_ + 60位随机字符
+示例: gf_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0
+```
+
+### 5.5 JWT Token 结构
 
 ```json
 {
@@ -352,7 +396,7 @@ async def stream_response(upstream_response):
 }
 ```
 
-### 5.5 管理员账号初始化
+### 5.6 管理员账号初始化
 
 系统首次启动时自动创建默认管理员：
 - 用户名：`admin`
@@ -568,7 +612,16 @@ GET /api/usage/summary?
 | `/api/departments` | GET | 部门列表 |
 | `/api/departments` | POST | 创建部门 |
 
-### 9.3 网关管理（admin）
+### 9.3 API Key 管理
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/api-keys` | GET | 获取当前用户的 API Key 列表 |
+| `/api/api-keys` | POST | 创建新的 API Key |
+| `/api/api-keys/{id}` | PUT | 更新 API Key（名称、权限、限速） |
+| `/api/api-keys/{id}` | DELETE | 吊销 API Key |
+
+### 9.4 网关管理（admin）
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
@@ -576,17 +629,15 @@ GET /api/usage/summary?
 | `/api/gateway/models` | POST | 添加模型路由 |
 | `/api/gateway/models/{id}` | PUT | 更新模型路由 |
 | `/api/gateway/models/{id}` | DELETE | 删除模型路由 |
-| `/api/gateway/api-keys` | GET | API Key 列表 |
-| `/api/gateway/api-keys` | POST | 添加 API Key |
 
-### 9.4 网关转发
+### 9.5 网关转发
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/v1/chat/completions` | POST | 对话补全（OpenAI 兼容） |
 | `/v1/models` | GET | 可用模型列表 |
 
-### 9.5 问答对话
+### 9.6 问答对话
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
@@ -596,14 +647,14 @@ GET /api/usage/summary?
 | `/api/chat/conversations/{id}/messages` | POST | 发送消息（流式响应） |
 | `/api/chat/conversations/{id}` | DELETE | 删除对话 |
 
-### 9.6 审计日志
+### 9.7 审计日志
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/api/audit/logs` | GET | 日志列表（支持筛选） |
 | `/api/audit/logs/{id}` | GET | 日志详情 |
 
-### 9.7 用量统计
+### 9.8 用量统计
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
