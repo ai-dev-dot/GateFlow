@@ -1,5 +1,10 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.database import engine, async_session
+from app.models import Base
+from app.services.auth_service import AuthService
+from app.utils.http_client import close_http_client
 from app.routers.auth import router as auth_router
 from app.routers.users import router as users_router
 from app.routers.api_keys import router as api_keys_router
@@ -10,7 +15,25 @@ from app.routers.audit import router as audit_router
 from app.routers.usage import router as usage_router
 from app.routers.chat import router as chat_router
 
-app = FastAPI(title="闸机 GateFlow", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Create tables on startup
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    # Initialize admin user
+    async with async_session() as db:
+        auth_service = AuthService(db)
+        await auth_service.init_admin()
+
+    yield
+
+    # Cleanup on shutdown
+    await close_http_client()
+
+
+app = FastAPI(title="闸机 GateFlow", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
