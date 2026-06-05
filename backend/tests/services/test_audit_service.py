@@ -155,42 +155,86 @@ async def test_request_body_truncation(db_session, test_user, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_preview_is_first_n_chars(db_session, test_user, monkeypatch):
-    """request_body_preview contains the first N characters of the body,
-    in plaintext, regardless of FULL_BODY setting."""
+async def test_preview_short_body_passes_through_unchanged(db_session, test_user, monkeypatch):
+    """Bodies that fit within AUDIT_LOG_PREVIEW_CHARS are returned verbatim
+    in the preview field. This is a deliberate trade-off — short prompts
+    are visible in list view to ease admin debugging."""
     from app.config import get_settings
 
     settings = get_settings()
-    n = settings.AUDIT_LOG_PREVIEW_CHARS
-
-    # FULL_BODY=true
-    monkeypatch.setattr(settings, "AUDIT_LOG_FULL_BODY", True)
-    body = "A" * (n * 3) + "END"
+    short_body = "hello world"  # 11 chars, < 80
     service = AuditService(db_session)
     log = await service.create_pending_log(
         user=test_user,
         model="m",
         provider="p",
         path="/x",
-        request_body=body,
+        request_body=short_body,
         is_stream=False,
     )
     await db_session.commit()
-    assert log.request_body_preview == "A" * n
+    assert log.request_body_preview == short_body
 
-    # FULL_BODY=false
-    monkeypatch.setattr(settings, "AUDIT_LOG_FULL_BODY", False)
-    log2 = await service.create_pending_log(
+
+@pytest.mark.asyncio
+async def test_preview_long_body_head_ellipsis_tail(db_session, test_user, monkeypatch):
+    """Bodies longer than AUDIT_LOG_PREVIEW_CHARS are rendered as
+    "headN...tailM" so the middle of the prompt is never persisted in
+    plaintext. Verified format: total length <= AUDIT_LOG_PREVIEW_CHARS,
+    head shows start, tail shows end, the "TAIL" middle marker is
+    dropped on purpose (the truncation removes it, which is the point).
+    """
+    from app.config import get_settings
+
+    settings = get_settings()
+    n = settings.AUDIT_LOG_PREVIEW_CHARS
+    # Put a long body with a unique secret in the MIDDLE that must NOT
+    # survive the preview. "TAIL" marker is at the end, after the secret.
+    long_body = "A" * (n * 4) + "SECRET_MIDDLE" + "B" * 50 + "TAIL_AT_END"
+    service = AuditService(db_session)
+    log = await service.create_pending_log(
         user=test_user,
         model="m",
         provider="p",
         path="/x",
-        request_body=body,
+        request_body=long_body,
         is_stream=False,
     )
     await db_session.commit()
-    assert log2.request_body_preview == "A" * n
-    assert log2.request_body is None, "FULL_BODY=false must drop encrypted body"
+    preview = log.request_body_preview
+    assert "..." in preview
+    assert len(preview) <= n
+    # Head: first N/2 chars (the "A..." leading run)
+    head_len = n // 2
+    assert preview.startswith("A" * head_len)
+    # The unique secret in the middle is NOT in plaintext
+    assert "SECRET_MIDDLE" not in preview, "middle of prompt must not be persisted"
+    # Tail: last M chars include the end-of-body marker
+    assert preview.endswith("TAIL_AT_END")
+    # The leading "B" run is also gone (between head and tail)
+    assert "B" * 50 not in preview
+
+
+@pytest.mark.asyncio
+async def test_full_body_false_drops_encrypted_body(db_session, test_user, monkeypatch):
+    """When AUDIT_LOG_FULL_BODY=false, the encrypted body field is NULL.
+    Only the preview (possibly truncated) is stored."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "AUDIT_LOG_FULL_BODY", False)
+    service = AuditService(db_session)
+    log = await service.create_pending_log(
+        user=test_user,
+        model="m",
+        provider="p",
+        path="/x",
+        request_body="x" * 200,
+        is_stream=False,
+    )
+    await db_session.commit()
+    assert log.request_body is None
+    assert log.request_body_preview  # non-empty (truncated or not)
 
 
 @pytest.mark.asyncio
@@ -231,8 +275,10 @@ async def test_record_admin_access_writes_meta_audit(db_session, admin_user, mon
     assert meta.path == "/admin/audit-access"
     assert meta.user_id == admin_user.id
     assert meta.status == "completed"
-    assert "target_log_id" in meta.request_body_preview
-    assert str(target.id) in meta.request_body_preview
+    # Preview format: "viewed log=<first-8-hex> user=<first-8-hex> path=..."
+    assert "viewed log=" in meta.request_body_preview
+    assert str(target.id).split("-")[0] in meta.request_body_preview
+    assert str(target.user_id).split("-")[0] in meta.request_body_preview
     assert meta.ip_address == "10.0.0.1"
 
 

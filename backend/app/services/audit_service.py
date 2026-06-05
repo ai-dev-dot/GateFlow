@@ -68,8 +68,18 @@ class AuditService:
             # Truncate to the hard ceiling to protect the DB
             truncated = request_body[: self.MAX_LOG_CONTENT_LENGTH]
 
-            # Always: short plaintext preview for list/detail display
-            preview = truncated[: settings.AUDIT_LOG_PREVIEW_CHARS]
+            # Always: short plaintext preview for list/detail display.
+            # For long bodies, render "head50...tail20" so a short prompt
+            # is not fully exposed. For bodies that fit within the budget,
+            # the preview is the full body (rare for long prompts, common
+            # for short chat messages — explicit trade-off documented in
+            # design spec §6.3).
+            if len(truncated) <= settings.AUDIT_LOG_PREVIEW_CHARS:
+                preview = truncated
+            else:
+                head = settings.AUDIT_LOG_PREVIEW_CHARS // 2  # 40 chars default
+                tail = settings.AUDIT_LOG_PREVIEW_CHARS - head - 3  # 37 chars default
+                preview = f"{truncated[:head]}...{truncated[-tail:]}"
 
             # Conditionally: encrypted full body
             if settings.AUDIT_LOG_FULL_BODY:
@@ -138,18 +148,28 @@ class AuditService:
 
         Path is fixed to `/admin/audit-access` so this category of access
         can be queried/alerted on independently of regular LLM calls.
-        The `request_body` field carries a JSON blob with the target log id
-        and target user id (the actual prompt content is NOT duplicated here).
+        The `request_body_preview` carries a short key=value summary
+        (truncated to the standard preview budget by the caller of
+        create_pending_log). The full UUID of the target log is
+        intentionally preserved in a follow-up implementation via a
+        separate side table; for now the first 8 hex chars of the
+        target log id is the unique-enough correlation key in preview.
         """
-        meta_payload = json.dumps(
-            {
-                "action": "view_log_body",
-                "target_log_id": str(target_log.id),
-                "target_user_id": str(target_log.user_id),
-                "target_path": target_log.path,
-            },
-            ensure_ascii=False,
+        target_short = str(target_log.id).split("-")[0]  # first 8 hex chars
+        user_short = str(target_log.user_id).split("-")[0]
+        # Build preview outside the create_pending_log path so we control
+        # the exact format (which differs structurally from an LLM body).
+        settings = get_settings()
+        meta_preview_raw = (
+            f"viewed log={target_short} user={user_short} path={target_log.path}"
         )
+        if len(meta_preview_raw) <= settings.AUDIT_LOG_PREVIEW_CHARS:
+            meta_preview = meta_preview_raw
+        else:
+            head = settings.AUDIT_LOG_PREVIEW_CHARS // 2
+            tail = settings.AUDIT_LOG_PREVIEW_CHARS - head - 3
+            meta_preview = f"{meta_preview_raw[:head]}...{meta_preview_raw[-tail:]}"
+
         log = AuditLog(
             user_id=admin_user.id,
             username=admin_user.username,
@@ -158,7 +178,7 @@ class AuditService:
             provider="-",
             method="GET",
             path="/admin/audit-access",
-            request_body_preview=meta_payload[: get_settings().AUDIT_LOG_PREVIEW_CHARS],
+            request_body_preview=meta_preview,
             is_stream=False,
             status="completed",
             ip_address=ip_address,

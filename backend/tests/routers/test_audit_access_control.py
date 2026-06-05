@@ -168,8 +168,9 @@ async def test_detail_include_body_admin_returns_plaintext(
     assert len(meta_rows) == 1
     meta = meta_rows[0]
     assert meta.user_id == admin_user.id
-    assert str(log.id) in meta.request_body_preview
-    assert "view_log_body" in meta.request_body_preview
+    # Preview format: "viewed log=<first-8-hex> user=<first-8-hex> path=..."
+    assert "viewed log=" in meta.request_body_preview
+    assert str(log.id).split("-")[0] in meta.request_body_preview
 
 
 @pytest.mark.asyncio
