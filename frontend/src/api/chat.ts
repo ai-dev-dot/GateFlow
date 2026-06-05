@@ -10,7 +10,7 @@ export async function listConversations(): Promise<Conversation[]> {
 /** 创建会话 */
 export async function createConversation(data: {
   title?: string;
-  model_id?: string;
+  model?: string;
 }): Promise<Conversation> {
   const res = await client.post('/chat/conversations', data);
   return res.data;

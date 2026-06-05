@@ -87,7 +87,7 @@ export default function Chat() {
       .then((res) => {
         const enabled = res.filter((m) => m.is_active)
         setModels(enabled)
-        if (enabled.length > 0) setSelectedModelId(enabled[0].id)
+        if (enabled.length > 0) setSelectedModelId(enabled[0].model_alias)
       })
       .catch(() => {})
   }, [])
@@ -130,7 +130,7 @@ export default function Chat() {
   /* ---- 新建会话 ---- */
   const handleNewConversation = async () => {
     try {
-      const conv = await createConversation({ model_id: selectedModelId })
+      const conv = await createConversation({ model: selectedModelId })
       setConversations((prev) => [conv, ...prev])
       setActiveConvId(conv.id)
       setInputValue('')
@@ -263,7 +263,7 @@ export default function Chat() {
               value={selectedModelId}
               onChange={setSelectedModelId}
               options={models.map((m) => ({
-                value: m.id,
+                value: m.model_alias,
                 label: m.model_alias,
               }))}
               size="small"
