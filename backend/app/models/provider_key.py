@@ -33,3 +33,4 @@ class ProviderAPIKey(Base, TimestampMixin):
     consecutive_errors = Column(Integer, default=0, nullable=False)
     cool_down_until = Column(DateTime, nullable=True)
     last_used_at = Column(DateTime, nullable=True, index=True)
+    last_error_at = Column(DateTime, nullable=True)

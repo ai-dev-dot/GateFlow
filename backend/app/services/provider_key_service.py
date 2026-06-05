@@ -73,14 +73,16 @@ class ProviderKeyService:
         - Other errors: just increment consecutive_errors
         Uses atomic UPDATE to avoid race conditions.
         """
+        now = datetime.utcnow()
         if status_code == 429:
-            cool_down = datetime.utcnow() + timedelta(seconds=60)
+            cool_down = now + timedelta(seconds=60)
             await self.db.execute(
                 update(ProviderAPIKey)
                 .where(ProviderAPIKey.id == key_id)
                 .values(
                     consecutive_errors=ProviderAPIKey.consecutive_errors + 1,
                     cool_down_until=cool_down,
+                    last_error_at=now,
                 )
             )
         elif status_code == 401:
@@ -90,6 +92,7 @@ class ProviderKeyService:
                 .values(
                     is_banned=True,
                     ban_reason="Authentication failed (HTTP 401)",
+                    last_error_at=now,
                 )
             )
         else:
@@ -98,6 +101,7 @@ class ProviderKeyService:
                 .where(ProviderAPIKey.id == key_id)
                 .values(
                     consecutive_errors=ProviderAPIKey.consecutive_errors + 1,
+                    last_error_at=now,
                 )
             )
         await self.db.commit()

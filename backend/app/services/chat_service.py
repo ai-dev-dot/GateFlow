@@ -14,6 +14,8 @@ from app.models.chat import Conversation, Message
 from app.models.gateway import ModelConfig
 from app.models.user import User
 from app.services.provider_key_service import ProviderKeyService
+from app.services.provider_adapters import get_adapter
+from app.services.provider_adapters.base import BaseAdapter, StreamEvent
 from app.utils.http_client import get_http_client
 
 logger = logging.getLogger(__name__)
@@ -47,7 +49,6 @@ class ChatService:
         self, conversation_id: UUID, user: User
     ) -> list[Message]:
         """获取对话消息列表（验证所有权）"""
-        # Verify ownership
         result = await self.db.execute(
             select(Conversation).where(
                 Conversation.id == conversation_id,
@@ -68,15 +69,7 @@ class ChatService:
     async def send_message(
         self, conversation_id: UUID, user: User, content: str
     ) -> Optional[Message]:
-        """发送消息并获取 AI 回复
-
-        1. 验证对话所有权
-        2. 保存用户消息
-        3. 构建上下文（历史消息）
-        4. 调用上游 LLM
-        5. 保存 AI 回复
-        """
-        # 1. Verify ownership
+        """发送消息并获取 AI 回复"""
         result = await self.db.execute(
             select(Conversation).where(
                 Conversation.id == conversation_id,
@@ -87,7 +80,6 @@ class ChatService:
         if not conversation:
             return None
 
-        # 2. Save user message
         user_message = Message(
             conversation_id=conversation_id,
             role="user",
@@ -97,20 +89,16 @@ class ChatService:
         self.db.add(user_message)
         await self.db.commit()
 
-        # 3. Build context from conversation history
         result = await self.db.execute(
             select(Message)
             .where(Message.conversation_id == conversation_id)
             .order_by(Message.created_at)
         )
         history = result.scalars().all()
-
         messages = [{"role": msg.role, "content": msg.content} for msg in history]
 
-        # 4. Call upstream LLM via gateway infrastructure
         ai_content, tokens = await self._call_llm(conversation.model, messages)
 
-        # 5. Save AI response
         ai_message = Message(
             conversation_id=conversation_id,
             role="assistant",
@@ -119,7 +107,6 @@ class ChatService:
         )
         self.db.add(ai_message)
 
-        # Auto-generate title from first user message if not set
         if not conversation.title and content:
             conversation.title = content[:50]
 
@@ -132,13 +119,10 @@ class ChatService:
     ) -> Optional[StreamingResponse]:
         """发送消息并以 SSE 流式返回 AI 回复
 
-        1. 验证对话所有权
-        2. 保存用户消息
-        3. 构建上下文（历史消息）
-        4. 流式调用上游 LLM，转发 SSE 给客户端
-        5. 流结束后，后台保存完整 AI 回复
+        The frontend always receives OpenAI-format SSE (choices[].delta.content).
+        If the upstream provider uses a different protocol (e.g. Anthropic),
+        the adapter converts the events client-side.
         """
-        # 1. Verify ownership
         result = await self.db.execute(
             select(Conversation).where(
                 Conversation.id == conversation_id,
@@ -149,7 +133,6 @@ class ChatService:
         if not conversation:
             return None
 
-        # 2. Save user message
         user_message = Message(
             conversation_id=conversation_id,
             role="user",
@@ -159,7 +142,6 @@ class ChatService:
         self.db.add(user_message)
         await self.db.commit()
 
-        # 3. Build context from conversation history
         result = await self.db.execute(
             select(Message)
             .where(Message.conversation_id == conversation_id)
@@ -168,7 +150,7 @@ class ChatService:
         history = result.scalars().all()
         messages = [{"role": msg.role, "content": msg.content} for msg in history]
 
-        # 4. Get model config and provider key
+        # Get model config
         result = await self.db.execute(
             select(ModelConfig).where(
                 ModelConfig.model_alias == conversation.model,
@@ -188,27 +170,24 @@ class ChatService:
             logger.error(f"No available API key for provider: {model_config.provider}")
             return self._error_stream_response("No available API key")
 
-        upstream_url = model_config.target_url.rstrip("/") + "/chat/completions"
-        upstream_headers = {
-            "Authorization": f"Bearer {provider_key.key}",
-            "Content-Type": "application/json",
-        }
-        body = {
-            "model": model_config.target_model,
-            "messages": messages,
-            "stream": True,
-        }
-        if model_config.default_temperature is not None:
-            body["temperature"] = model_config.default_temperature
-        if model_config.default_max_tokens is not None:
-            body["max_tokens"] = model_config.default_max_tokens
+        # Use adapter for protocol handling
+        adapter = get_adapter(model_config.provider)
+        upstream_url = adapter.build_upstream_url(model_config.target_url)
+        upstream_headers = adapter.build_headers(provider_key.key)
+        body = adapter.build_request_body(
+            {"messages": messages, "stream": True},
+            model_config.target_model,
+            {
+                "temperature": model_config.default_temperature,
+                "max_tokens": model_config.default_max_tokens,
+            },
+        )
 
-        # Capture values for the generator closure
         conv_id = conversation_id
         user_content = content
 
         async def stream_generator():
-            """Yield SSE chunks from upstream, collect content for DB save."""
+            """Yield OpenAI-format SSE chunks, collecting content for DB save."""
             full_content = ""
             client = await get_http_client()
 
@@ -228,42 +207,36 @@ class ChatService:
                         logger.warning(
                             f"Upstream error {upstream_response.status_code}: {error_text[:500]}"
                         )
-                        error_msg = json.dumps(
-                            {
-                                "error": {
-                                    "message": f"Upstream returned {upstream_response.status_code}",
-                                    "type": "upstream_error",
-                                }
-                            }
+                        yield adapter.error_sse(
+                            f"Upstream returned {upstream_response.status_code}"
                         )
-                        yield f"data: {error_msg}\n\n"
-                        yield "data: [DONE]\n\n"
                         return
 
+                    buffer_lines: list[str] = []
                     async for chunk in upstream_response.aiter_bytes():
-                        yield chunk
-                        # Parse SSE chunks to collect full content
                         chunk_text = chunk.decode("utf-8", errors="replace")
-                        full_content = self._collect_stream_content(
-                            chunk_text, full_content
-                        )
+                        for line in chunk_text.split("\n"):
+                            line = line.strip()
+                            if not line:
+                                if buffer_lines:
+                                    event = adapter.parse_stream_event(buffer_lines)
+                                    if event:
+                                        full_content += event.text
+                                        # Convert to OpenAI SSE for frontend
+                                        openai_sse = adapter.to_openai_sse(event)
+                                        if openai_sse:
+                                            yield openai_sse
+                                    buffer_lines = []
+                                continue
+                            buffer_lines.append(line)
 
             except httpx.ReadTimeout:
                 logger.error("Upstream read timeout during chat stream")
-                error_msg = json.dumps(
-                    {"error": {"message": "Upstream read timeout", "type": "timeout"}}
-                )
-                yield f"data: {error_msg}\n\n"
-                yield "data: [DONE]\n\n"
+                yield adapter.error_sse("Upstream read timeout", "timeout")
             except Exception as e:
                 logger.error(f"Chat stream error: {e}")
-                error_msg = json.dumps(
-                    {"error": {"message": str(e), "type": "internal_error"}}
-                )
-                yield f"data: {error_msg}\n\n"
-                yield "data: [DONE]\n\n"
+                yield adapter.error_sse(str(e), "internal_error")
             finally:
-                # Save the full response in background with a fresh session
                 if full_content:
                     asyncio.create_task(
                         self._save_stream_response(conv_id, user_content, full_content)
@@ -300,28 +273,6 @@ class ChatService:
             },
         )
 
-    @staticmethod
-    def _collect_stream_content(chunk_text: str, full_content: str) -> str:
-        """Parse SSE chunk text and append delta content to full_content."""
-        for line in chunk_text.split("\n"):
-            line = line.strip()
-            if not line or not line.startswith("data:"):
-                continue
-            data_str = line[5:].strip()
-            if data_str == "[DONE]":
-                continue
-            try:
-                data = json.loads(data_str)
-                choices = data.get("choices", [])
-                for choice in choices:
-                    delta = choice.get("delta", {})
-                    c = delta.get("content")
-                    if c:
-                        full_content += c
-            except json.JSONDecodeError:
-                continue
-        return full_content
-
     async def _save_stream_response(
         self,
         conversation_id: UUID,
@@ -341,7 +292,6 @@ class ChatService:
                 )
                 db.add(ai_message)
 
-                # Auto-generate title from first user message
                 result = await db.execute(
                     select(Conversation).where(Conversation.id == conversation_id)
                 )
@@ -370,13 +320,11 @@ class ChatService:
         if not conversation:
             return False
 
-        # Delete messages first
         await self.db.execute(
             Message.__table__.delete().where(
                 Message.conversation_id == conversation_id
             )
         )
-        # Delete conversation
         await self.db.delete(conversation)
         await self.db.commit()
         return True
@@ -385,7 +333,6 @@ class ChatService:
         self, model_alias: str, messages: list[dict]
     ) -> tuple[str, int]:
         """调用上游 LLM，返回 (content, tokens)"""
-        # Find model config
         result = await self.db.execute(
             select(ModelConfig).where(
                 ModelConfig.model_alias == model_alias,
@@ -398,7 +345,6 @@ class ChatService:
             logger.error(f"Model not found or inactive: {model_alias}")
             return "(error: model not found)", 0
 
-        # Get provider key
         key_service = ProviderKeyService(self.db)
         provider_key = await key_service.get_available_key(model_config.provider)
 
@@ -406,21 +352,17 @@ class ChatService:
             logger.error(f"No available API key for provider: {model_config.provider}")
             return "(error: no available API key)", 0
 
-        # Build request
-        upstream_url = model_config.target_url.rstrip("/") + "/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {provider_key.key}",
-            "Content-Type": "application/json",
-        }
-        body = {
-            "model": model_config.target_model,
-            "messages": messages,
-            "stream": False,
-        }
-        if model_config.default_temperature is not None:
-            body["temperature"] = model_config.default_temperature
-        if model_config.default_max_tokens is not None:
-            body["max_tokens"] = model_config.default_max_tokens
+        adapter = get_adapter(model_config.provider)
+        upstream_url = adapter.build_upstream_url(model_config.target_url)
+        headers = adapter.build_headers(provider_key.key)
+        body = adapter.build_request_body(
+            {"messages": messages, "stream": False},
+            model_config.target_model,
+            {
+                "temperature": model_config.default_temperature,
+                "max_tokens": model_config.default_max_tokens,
+            },
+        )
 
         try:
             client = await get_http_client()
@@ -438,15 +380,8 @@ class ChatService:
                 return f"(error: upstream returned {response.status_code})", 0
 
             data = response.json()
-            usage = data.get("usage", {})
-            tokens = usage.get("completion_tokens", 0)
-
-            choices = data.get("choices", [])
-            if choices:
-                content = choices[0].get("message", {}).get("content", "")
-                return content, tokens
-
-            return "(empty response)", tokens
+            content, _, output_tokens = adapter.extract_response(data)
+            return content or "(empty response)", output_tokens
 
         except Exception as e:
             logger.error(f"LLM call failed: {e}", exc_info=True)

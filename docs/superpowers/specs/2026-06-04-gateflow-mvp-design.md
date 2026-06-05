@@ -1,8 +1,8 @@
 # 闸机 GateFlow MVP 设计文档
 
-> 日期：2026-06-04
-> 版本：v0.1.0 MVP
-> 状态：设计完成，待审阅
+> 日期：2026-06-04（v0.2.0 Anthropic 支持更新于 2026-06-05）
+> 版本：v0.2.0
+> 状态：MVP 已完成，v0.2.0 设计完成
 
 ---
 
@@ -56,6 +56,13 @@
 - SSO 集成（企业微信、钉钉、飞书）
 - RAG 引擎
 - 影子 AI 治理
+
+### 1.4 v0.2.0 范围
+
+**新增：**
+- **Anthropic 协议支持** —— `POST /v1/messages` 端点，Claude Code 等原生 Anthropic 客户端可直接通过闸机代理
+- **Provider Adapter 架构** —— 协议差异隔离在 adapter 层，新增 provider 只需实现一个 adapter
+- **客户端类型管理（AgentType）** —— 管理员维护的枚举表，创建 API Key 时选择客户端类型，审计日志按客户端类型统计 token 用量
 
 ---
 
@@ -210,10 +217,21 @@ response = client.chat.completions.create(
 
 ### 4.2 支持的 API 端点
 
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/v1/chat/completions` | POST | 对话补全（核心） |
-| `/v1/models` | GET | 获取可用模型列表 |
+| 端点 | 方法 | 协议 | 说明 |
+|------|------|------|------|
+| `/v1/chat/completions` | POST | OpenAI | 对话补全（核心） |
+| `/v1/messages` | POST | Anthropic | Anthropic Messages API（v0.2.0 新增） |
+| `/v1/models` | GET | OpenAI | 获取可用模型列表 |
+
+**双协议支持**：网关同时暴露 OpenAI 和 Anthropic 两种协议端点。客户端 SDK 自动选择对应的端点——OpenAI SDK 调用 `/v1/chat/completions`，Anthropic SDK 调用 `/v1/messages`。两个端点共享同一套认证、模型配置、审计日志和用量统计基础设施。
+
+```python
+# OpenAI SDK 配置
+client = OpenAI(base_url="http://your-gateflow:8000/v1", api_key="gf_xxx")
+
+# Anthropic SDK 配置（v0.2.0+）
+client = anthropic.Anthropic(base_url="http://your-gateflow:8000/v1", api_key="gf_xxx")
+```
 
 ### 4.3 路由与调度逻辑
 
@@ -420,11 +438,127 @@ async def forward_stream_request(user, model, request_body):
 
 ### 4.6 协议设计
 
-- **统一入口协议**：OpenAI 兼容格式
-- **MVP 阶段**：DeepSeek、小米 MiMo 都支持 OpenAI 格式，直接透传
-- **未来扩展**：需要支持其他协议时，在网关层加协议转换器
+**MVP 阶段**：DeepSeek、小米 MiMo 都支持 OpenAI 格式，直接透传。
 
-### 4.7 参数透传
+**v0.2.0 扩展**：引入 Provider Adapter 架构，支持多协议。
+
+**核心差异（OpenAI vs Anthropic）：**
+
+| 维度 | OpenAI | Anthropic |
+|------|--------|-----------|
+| 端点 | `POST /v1/chat/completions` | `POST /v1/messages` |
+| 认证头 | `Authorization: Bearer <key>` | `x-api-key: <key>` |
+| `max_tokens` | 可选 | **必填** |
+| system prompt | messages 数组内 | 顶层 `system` 字段 |
+| 流式文本 | `choices[].delta.content` | `content_block_delta` → `delta.text` |
+| 流结束标记 | `data: [DONE]` | `event: message_stop` |
+| 非流式响应 | `choices[0].message.content` | `content[0].text` |
+| token 字段 | `usage.prompt_tokens` / `completion_tokens` | `usage.input_tokens` / `output_tokens` |
+
+### 4.7 Provider Adapter 架构（v0.2.0）
+
+将协议差异隔离在 adapter 层，GatewayService 和 ChatService 通过统一接口处理不同协议：
+
+```
+provider_adapters/
+├── __init__.py          # get_adapter(provider) 工厂函数
+├── base.py              # BaseAdapter 抽象基类 + StreamEvent 数据类
+├── openai_adapter.py    # OpenAI 协议适配
+└── anthropic_adapter.py # Anthropic 协议适配
+```
+
+**BaseAdapter 接口：**
+
+```python
+@dataclass
+class StreamEvent:
+    text: str = ""           # 本次增量文本
+    input_tokens: int = 0    # 输入 token
+    output_tokens: int = 0   # 输出 token
+    done: bool = False       # 流是否结束
+    error: str = ""          # 错误信息
+
+class BaseAdapter(ABC):
+    def build_upstream_url(self, target_url: str) -> str: ...
+    def build_headers(self, api_key: str) -> dict: ...
+    def build_request_body(self, body: dict, target_model: str, defaults: dict) -> dict: ...
+    def extract_response(self, response: dict) -> tuple[str, int, int]: ...
+    def parse_stream_event(self, lines: list[str]) -> StreamEvent: ...
+    def format_error(self, status: int, body: dict) -> dict: ...
+    def error_sse(self, message: str, error_type: str) -> str: ...
+```
+
+**两条路径：**
+
+```
+Claude Code → POST /v1/messages (Anthropic 格式)
+                │
+                ▼
+        GatewayService + AnthropicAdapter
+                │
+                ▼
+        上游 Anthropic API（透传原始格式）
+
+Chat 页面 → POST /api/chat/.../messages/stream
+                │
+                ▼
+        ChatService + 自动选择 adapter
+                │
+                ▼
+        adapter 将 Anthropic 响应转换为 OpenAI SSE 格式
+                │
+                ▼
+        前端收到 OpenAI SSE（choices[].delta.content）
+```
+
+- `/v1/messages` 端点：透传上游原始 Anthropic 格式，Claude Code 等原生客户端直接使用
+- Chat 页面：ChatService 内部做 Anthropic → OpenAI 格式转换，前端无需改动
+
+### 4.8 客户端类型管理（AgentType，v0.2.0）
+
+管理员维护的枚举表，用于标识 API Key 的用途（哪个客户端/Agent 在使用）。
+
+**AgentType 模型：**
+
+| 字段 | 类型 | 说明 | 示例 |
+|-----|------|------|------|
+| id | UUID | 主键 | - |
+| name | string(50) | 类型名称（唯一） | `Claude Code` |
+| is_active | bool | 是否启用 | `true` |
+| created_at | datetime | 创建时间 | - |
+
+**内置默认值（系统初始化时自动创建）：**
+
+| name | 说明 |
+|------|------|
+| Claude Code | Anthropic 官方 CLI 开发工具 |
+| Codex | OpenAI 代码生成工具 |
+| Cursor | AI 代码编辑器 |
+| Dify | LLM 应用开发平台 |
+| LangChain | LLM 应用框架 |
+| 自定义 | 用户自定义用途 |
+
+**APIKey 模型关联：**
+
+```python
+class APIKey(Base):
+    # ... 现有字段 ...
+    agent_type_id = Column(UUID, ForeignKey("agent_types.id"), nullable=True)
+    agent_type = relationship("AgentType")
+```
+
+创建 API Key 时，用户从下拉列表中选择客户端类型。审计日志记录 `agent_type`，用量统计按客户端类型分组。
+
+**API 接口：**
+
+```
+GET    /api/agent-types           # 获取客户端类型列表（所有用户可访问）
+POST   /api/agent-types           # 新增类型（管理员）
+PUT    /api/agent-types/{id}      # 编辑类型（管理员）
+DELETE /api/agent-types/{id}      # 删除类型（管理员）
+```
+
+### 4.9 参数透传
 
 网关是透明代理，用户请求中的参数（temperature、max_tokens、top_p 等）原样转发给上游 API。
 
@@ -592,6 +726,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 | username | string | 用户名 |
 | department | string | 部门名 |
 | api_key_id | UUID | 使用的 API Key ID（可选） |
+| agent_type | string | 客户端类型（枚举值，如"Claude Code"、"Codex"，v0.2.0 新增） |
 | model | string | 请求的模型 |
 | provider | string | 提供商 |
 | method | string | HTTP 方法 |
@@ -664,6 +799,7 @@ MVP 阶段只统计 Token 用量和各维度占比，金额计算列入后续版
 - 模型占比（哪个模型用得最多）
 - 用户占比（谁用得最多）
 - 部门占比（哪个部门用得最多）
+- API Key 占比（哪个工具用得最多，v0.2.0 新增）—— 通过 `api_key_id` 关联，每个 Key 可标记用途（如"Claude Code"、"Codex"、"Cursor"）
 - 请求次数统计
 
 ### 7.2 统计 API
@@ -681,6 +817,11 @@ GET /api/usage/summary?
 
 GET /api/usage/summary?
     dimension=model       # 按模型统计
+    &start_time=...
+    &end_time=...
+
+GET /api/usage/summary?
+    dimension=api_key     # 按 API Key 统计（v0.2.0 新增）
     &start_time=...
     &end_time=...
 ```
@@ -812,8 +953,8 @@ GET /api/usage/summary?
 | `/api/users` | POST | 创建用户 |
 | `/api/users/{id}` | PUT | 更新用户 |
 | `/api/users/{id}` | DELETE | 删除用户 |
-| `/api/departments` | GET | 部门列表 |
-| `/api/departments` | POST | 创建部门 |
+| `/api/users/departments` | GET | 部门列表 |
+| `/api/users/departments` | POST | 创建部门 |
 
 ### 9.3 API Key 管理
 
@@ -882,17 +1023,18 @@ GET /api/usage/summary?
 
 ### 10.1 v0.2.0
 
+- **Anthropic 协议支持**（`POST /v1/messages` 端点 + Provider Adapter 架构）✅ 设计完成
+- **按 API Key 用量统计**（审计日志追踪 api_key_id，按工具维度统计 token）✅ 设计完成
 - Docker 一键部署
 - Redis 集成（速率限制、Token 黑名单）
 - 成本金额计算（维护定价表）
 - 敏感数据检测与脱敏
 - 预算管理与告警
-- 支持更多大模型（Anthropic Claude、字节豆包）
+- 支持更多大模型（字节豆包等）
 
 ### 10.2 v0.3.0
 
 - SSO 集成（企业微信、钉钉、飞书、LDAP）
-- 协议转换层（支持 Anthropic 格式输入）
 - 完善的审计检索功能
 - 数据导出（Excel、CSV）
 

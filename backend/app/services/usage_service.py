@@ -9,7 +9,7 @@ from app.models.usage import UsageStat
 
 
 class UsageService:
-    """用量统计服务：按日期/用户/模型聚合 token 用量"""
+    """用量统计服务：按日期/用户/模型/ApiKey 聚合 token 用量"""
 
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -21,8 +21,11 @@ class UsageService:
         department: Optional[str],
         input_tokens: int,
         output_tokens: int,
+        api_key_id: Optional[UUID] = None,
+        api_key_name: Optional[str] = None,
+        agent_type: Optional[str] = None,
     ) -> None:
-        """记录用量，按 (日期, 用户, 模型) upsert"""
+        """记录用量，按 (日期, 用户, 模型, api_key_id) upsert"""
         today = date.today()
 
         result = await self.db.execute(
@@ -30,23 +33,25 @@ class UsageService:
                 UsageStat.date == today,
                 UsageStat.user_id == user_id,
                 UsageStat.model == model,
+                UsageStat.api_key_id == api_key_id,
             )
         )
         stat = result.scalar_one_or_none()
 
         if stat:
-            # 累加已有记录
             stat.request_count += 1
             stat.input_tokens += input_tokens
             stat.output_tokens += output_tokens
             stat.total_tokens += input_tokens + output_tokens
         else:
-            # 创建新记录
             stat = UsageStat(
                 date=today,
                 user_id=user_id,
                 model=model,
                 department=department,
+                api_key_id=api_key_id,
+                api_key_name=api_key_name,
+                agent_type=agent_type,
                 request_count=1,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
@@ -64,9 +69,8 @@ class UsageService:
     ) -> list:
         """按维度聚合用量统计
 
-        dimension: "user" | "department" | "model"
+        dimension: "user" | "department" | "model" | "api_key"
         """
-        # 构建筛选条件
         filters = []
         if start_date:
             filters.append(UsageStat.date >= start_date)
@@ -74,7 +78,6 @@ class UsageService:
             filters.append(UsageStat.date <= end_date)
 
         if dimension == "user":
-            group_col = UsageStat.user_id
             query = (
                 select(
                     UsageStat.user_id,
@@ -87,7 +90,6 @@ class UsageService:
                 .group_by(UsageStat.user_id)
             )
         elif dimension == "department":
-            group_col = UsageStat.department
             query = (
                 select(
                     UsageStat.department,
@@ -100,7 +102,6 @@ class UsageService:
                 .group_by(UsageStat.department)
             )
         elif dimension == "model":
-            group_col = UsageStat.model
             query = (
                 select(
                     UsageStat.model,
@@ -112,6 +113,18 @@ class UsageService:
                 .where(*filters)
                 .group_by(UsageStat.model)
             )
+        elif dimension == "api_key":
+            query = (
+                select(
+                    UsageStat.api_key_name,
+                    func.sum(UsageStat.request_count).label("request_count"),
+                    func.sum(UsageStat.input_tokens).label("input_tokens"),
+                    func.sum(UsageStat.output_tokens).label("output_tokens"),
+                    func.sum(UsageStat.total_tokens).label("total_tokens"),
+                )
+                .where(*filters)
+                .group_by(UsageStat.api_key_name)
+            )
         else:
             raise ValueError(f"不支持的聚合维度: {dimension}")
 
@@ -121,7 +134,7 @@ class UsageService:
 
         return [
             {
-                "dimension": row[0],
+                "dimension": row[0] or "未知",
                 "request_count": row[1],
                 "input_tokens": row[2],
                 "output_tokens": row[3],

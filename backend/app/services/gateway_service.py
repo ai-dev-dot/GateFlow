@@ -16,16 +16,23 @@ from app.models.gateway import ModelConfig
 from app.models.usage import UsageStat
 from app.models.user import User
 from app.services.provider_key_service import ProviderKeyService
+from app.services.provider_adapters import get_adapter
+from app.services.provider_adapters.base import BaseAdapter, StreamEvent
 from app.utils.http_client import get_http_client
 
 logger = logging.getLogger(__name__)
 
 
 class GatewayService:
-    """Core gateway service that forwards requests to upstream LLM providers."""
+    """Core gateway service that forwards requests to upstream LLM providers.
 
-    def __init__(self, db: AsyncSession):
+    Uses a BaseAdapter to handle provider-specific protocol differences
+    (URL, headers, request/response format, SSE parsing).
+    """
+
+    def __init__(self, db: AsyncSession, adapter: BaseAdapter):
         self.db = db
+        self.adapter = adapter
 
     async def forward_request(
         self,
@@ -34,6 +41,9 @@ class GatewayService:
         request_body: dict,
         is_stream: bool,
         request: Request,
+        path: str = "/v1/chat/completions",
+        api_key_id=None,
+        agent_type: str | None = None,
     ):
         """
         Main entry point: forward an LLM API request to the upstream provider.
@@ -44,6 +54,8 @@ class GatewayService:
         4. Return response to client
         5. Background: update audit log, key stats, usage stats
         """
+        adapter = self.adapter
+
         key_service = ProviderKeyService(self.db)
         provider_key = await key_service.get_available_key(model_config.provider)
 
@@ -68,34 +80,30 @@ class GatewayService:
             model=request_body.get("model", model_config.model_alias),
             provider=model_config.provider,
             method="POST",
-            path="/v1/chat/completions",
+            path=path,
             request_body=json.dumps(request_body, ensure_ascii=False)[:2000],
             request_tokens=request_tokens,
             is_stream=is_stream,
             ip_address=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent", "")[:500],
+            api_key_id=api_key_id,
+            agent_type=agent_type,
         )
         self.db.add(audit_log)
         await self.db.commit()
         await self.db.refresh(audit_log)
 
-        # Build upstream URL
-        upstream_url = model_config.target_url.rstrip("/") + "/chat/completions"
-
-        # Build upstream headers
-        upstream_headers = {
-            "Authorization": f"Bearer {provider_key.key}",
-            "Content-Type": "application/json",
-        }
-
-        # Replace model alias with target model
-        forward_body = {**request_body, "model": model_config.target_model}
-
-        # Apply model config defaults
-        if model_config.default_temperature is not None and "temperature" not in request_body:
-            forward_body["temperature"] = model_config.default_temperature
-        if model_config.default_max_tokens is not None and "max_tokens" not in request_body:
-            forward_body["max_tokens"] = model_config.default_max_tokens
+        # Build upstream request via adapter
+        upstream_url = adapter.build_upstream_url(model_config.target_url)
+        upstream_headers = adapter.build_headers(provider_key.key)
+        forward_body = adapter.build_request_body(
+            request_body,
+            model_config.target_model,
+            {
+                "temperature": model_config.default_temperature,
+                "max_tokens": model_config.default_max_tokens,
+            },
+        )
 
         start_time = time.monotonic()
 
@@ -110,6 +118,8 @@ class GatewayService:
                 model_config=model_config,
                 request_tokens=request_tokens,
                 start_time=start_time,
+                api_key_id=api_key_id,
+                agent_type=agent_type,
             )
         else:
             return await self._handle_non_stream(
@@ -122,6 +132,8 @@ class GatewayService:
                 model_config=model_config,
                 request_tokens=request_tokens,
                 start_time=start_time,
+                api_key_id=api_key_id,
+                agent_type=agent_type,
             )
 
     async def _handle_stream(
@@ -135,16 +147,20 @@ class GatewayService:
         model_config: ModelConfig,
         request_tokens: int,
         start_time: float,
+        api_key_id=None,
+        agent_type: str | None = None,
     ) -> StreamingResponse:
         """Handle streaming request: stream response directly, background log update."""
+
+        adapter = self.adapter
 
         async def stream_generator():
             """Yield chunks from upstream, collect usage for background update."""
             client = await get_http_client()
             response_tokens = 0
-            full_content = ""
-            usage_data = {}
+            input_tokens = 0
             status_code = 200
+            buffer_lines: list[str] = []
 
             try:
                 async with client.stream(
@@ -157,55 +173,45 @@ class GatewayService:
                     status_code = upstream_response.status_code
 
                     if status_code != 200:
-                        # Read error body and yield as error
                         error_body = b""
                         async for chunk in upstream_response.aiter_bytes():
                             error_body += chunk
                         error_text = error_body.decode("utf-8", errors="replace")
-                        logger.warning(
-                            f"Upstream error {status_code}: {error_text[:500]}"
-                        )
-                        # Yield error as SSE event
-                        error_msg = json.dumps(
-                            {
-                                "error": {
-                                    "message": f"Upstream returned {status_code}",
-                                    "type": "upstream_error",
-                                    "code": status_code,
-                                }
-                            }
-                        )
-                        yield f"data: {error_msg}\n\n"
-                        yield "data: [DONE]\n\n"
+                        logger.warning(f"Upstream error {status_code}: {error_text[:500]}")
+                        yield adapter.error_sse(f"Upstream returned {status_code}")
                         return
 
                     async for chunk in upstream_response.aiter_bytes():
                         yield chunk
-                        # Parse SSE chunks to extract usage
+                        # Parse SSE chunks to extract usage via adapter
                         chunk_text = chunk.decode("utf-8", errors="replace")
-                        response_tokens, usage_data = self._parse_stream_chunk(
-                            chunk_text, response_tokens, usage_data
-                        )
+                        for line in chunk_text.split("\n"):
+                            line = line.strip()
+                            if not line:
+                                if buffer_lines:
+                                    event = adapter.parse_stream_event(buffer_lines)
+                                    if event:
+                                        if event.input_tokens:
+                                            input_tokens = event.input_tokens
+                                        if event.output_tokens:
+                                            response_tokens = event.output_tokens
+                                        # Fallback: count text chunks as rough token estimate
+                                        if event.text and not event.output_tokens:
+                                            response_tokens += 1
+                                    buffer_lines = []
+                                continue
+                            buffer_lines.append(line)
 
             except httpx.ReadTimeout:
                 logger.error("Upstream read timeout")
-                error_msg = json.dumps(
-                    {"error": {"message": "Upstream read timeout", "type": "timeout"}}
-                )
-                yield f"data: {error_msg}\n\n"
-                yield "data: [DONE]\n\n"
+                yield adapter.error_sse("Upstream read timeout", "timeout")
                 status_code = 504
             except Exception as e:
                 logger.error(f"Stream error: {e}")
-                error_msg = json.dumps(
-                    {"error": {"message": str(e), "type": "internal_error"}}
-                )
-                yield f"data: {error_msg}\n\n"
-                yield "data: [DONE]\n\n"
+                yield adapter.error_sse(str(e), "internal_error")
                 status_code = 500
             finally:
                 latency_ms = int((time.monotonic() - start_time) * 1000)
-                # Background update: don't block the stream
                 asyncio.create_task(
                     self._update_after_response(
                         audit_log_id=audit_log_id,
@@ -216,6 +222,8 @@ class GatewayService:
                         latency_ms=latency_ms,
                         user=user,
                         model_config=model_config,
+                        api_key_id=api_key_id,
+                        agent_type=agent_type,
                     )
                 )
 
@@ -240,8 +248,11 @@ class GatewayService:
         model_config: ModelConfig,
         request_tokens: int,
         start_time: float,
+        api_key_id=None,
+        agent_type: str | None = None,
     ):
         """Handle non-streaming request: return response directly, background log update."""
+        adapter = self.adapter
         client = await get_http_client()
         status_code = 200
         response_tokens = 0
@@ -258,30 +269,22 @@ class GatewayService:
             response_body = response.json()
 
             if status_code == 200:
-                # Extract usage from response
-                usage = response_body.get("usage", {})
-                response_tokens = usage.get("completion_tokens", 0)
+                _, _, output_tokens = adapter.extract_response(response_body)
+                response_tokens = output_tokens
             else:
-                logger.warning(
-                    f"Upstream error {status_code}: {response.text[:500]}"
-                )
+                logger.warning(f"Upstream error {status_code}: {response.text[:500]}")
 
         except httpx.ReadTimeout:
             logger.error("Upstream read timeout")
             status_code = 504
-            response_body = {
-                "error": {"message": "Upstream read timeout", "type": "timeout"}
-            }
+            response_body = adapter.format_error(504, {"detail": "Upstream read timeout"})
         except Exception as e:
             logger.error(f"Request error: {e}")
             status_code = 500
-            response_body = {
-                "error": {"message": str(e), "type": "internal_error"}
-            }
+            response_body = adapter.format_error(500, {"detail": str(e)})
 
         latency_ms = int((time.monotonic() - start_time) * 1000)
 
-        # Background update
         asyncio.create_task(
             self._update_after_response(
                 audit_log_id=audit_log_id,
@@ -292,6 +295,8 @@ class GatewayService:
                 latency_ms=latency_ms,
                 user=user,
                 model_config=model_config,
+                api_key_id=api_key_id,
+                agent_type=agent_type,
             )
         )
 
@@ -312,17 +317,14 @@ class GatewayService:
         latency_ms: int,
         user: User,
         model_config: ModelConfig,
+        api_key_id=None,
+        agent_type: str | None = None,
     ) -> None:
-        """
-        Background task: update audit log, provider key stats, and usage stats.
-        Runs via asyncio.create_task() so it doesn't block the response.
-        """
+        """Background task: update audit log, provider key stats, and usage stats."""
         try:
-            # Use a fresh session for background work
             from app.database import async_session
 
             async with async_session() as db:
-                # 1. Update audit log
                 result = await db.execute(
                     select(AuditLog).where(AuditLog.id == audit_log_id)
                 )
@@ -337,7 +339,6 @@ class GatewayService:
                     audit_log.completed_at = datetime.utcnow()
                     await db.commit()
 
-                # 2. Update provider key stats
                 key_service = ProviderKeyService(db)
                 if status_code == 200:
                     await key_service.update_key_success(
@@ -346,7 +347,6 @@ class GatewayService:
                 else:
                     await key_service.update_key_error(provider_key_id, status_code)
 
-                # 3. Update usage stats
                 await self._update_usage_stats(
                     db=db,
                     user_id=user.id,
@@ -357,6 +357,8 @@ class GatewayService:
                     model=model_config.model_alias,
                     request_tokens=request_tokens,
                     response_tokens=response_tokens,
+                    api_key_id=api_key_id,
+                    agent_type=agent_type,
                 )
 
         except Exception as e:
@@ -370,8 +372,10 @@ class GatewayService:
         model: str,
         request_tokens: int,
         response_tokens: int,
+        api_key_id=None,
+        agent_type: str | None = None,
     ) -> None:
-        """Update daily usage stats for the user/model combination."""
+        """Update daily usage stats for the user/model/api_key combination."""
         today = date.today()
         total_tokens = request_tokens + response_tokens
 
@@ -380,6 +384,7 @@ class GatewayService:
                 UsageStat.user_id == user_id,
                 UsageStat.model == model,
                 UsageStat.date == today,
+                UsageStat.api_key_id == api_key_id,
             )
         )
         stat = result.scalar_one_or_none()
@@ -390,11 +395,23 @@ class GatewayService:
             stat.output_tokens += response_tokens
             stat.total_tokens += total_tokens
         else:
+            # Resolve api_key_name if we have an api_key_id
+            api_key_name = None
+            if api_key_id:
+                from app.models.api_key import APIKey
+                result = await db.execute(
+                    select(APIKey.name).where(APIKey.id == api_key_id)
+                )
+                api_key_name = result.scalar_one_or_none()
+
             stat = UsageStat(
                 date=today,
                 user_id=user_id,
                 model=model,
                 department=department,
+                api_key_id=api_key_id,
+                api_key_name=api_key_name,
+                agent_type=agent_type,
                 request_count=1,
                 input_tokens=request_tokens,
                 output_tokens=response_tokens,
@@ -406,11 +423,7 @@ class GatewayService:
 
     @staticmethod
     def _estimate_request_tokens(request_body: dict) -> int:
-        """
-        Rough estimation of input tokens from request body.
-        A simple heuristic: ~4 chars per token for English, ~2 for CJK.
-        This is a best-effort estimate; actual counts come from upstream.
-        """
+        """Rough estimation of input tokens from request body."""
         messages = request_body.get("messages", [])
         total_chars = 0
         for msg in messages:
@@ -421,41 +434,7 @@ class GatewayService:
                 for part in content:
                     if isinstance(part, dict):
                         total_chars += len(part.get("text", ""))
-
-        # Rough estimate: ~3 chars per token on average
         return max(1, total_chars // 3)
-
-    @staticmethod
-    def _parse_stream_chunk(
-        chunk_text: str, response_tokens: int, usage_data: dict
-    ) -> tuple:
-        """
-        Parse SSE chunk to extract token usage.
-        OpenAI sends usage in the final chunk before [DONE].
-        """
-        for line in chunk_text.split("\n"):
-            line = line.strip()
-            if not line or not line.startswith("data:"):
-                continue
-            data_str = line[5:].strip()
-            if data_str == "[DONE]":
-                continue
-            try:
-                data = json.loads(data_str)
-                # Check for usage field (sent in last chunk with stream_options)
-                if "usage" in data and data["usage"]:
-                    usage_data = data["usage"]
-                    response_tokens = usage_data.get("completion_tokens", 0)
-                # Also count tokens from delta content as fallback
-                choices = data.get("choices", [])
-                for choice in choices:
-                    delta = choice.get("delta", {})
-                    if delta.get("content"):
-                        response_tokens += 1
-            except json.JSONDecodeError:
-                continue
-
-        return response_tokens, usage_data
 
 
 class GatewayError(Exception):

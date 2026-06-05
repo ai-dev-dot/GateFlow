@@ -1,4 +1,4 @@
-# 闸机 GateFlow
+# 闸机 GateFlow・企业 AI 网关
 
 让企业AI，安全有序地流动
 

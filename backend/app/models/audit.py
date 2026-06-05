@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -20,7 +21,7 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    status = Column(String(20), default="pending", index=True, nullable=False)
+    status = Column(String(20), default="pending", nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
     user_id = Column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
@@ -30,6 +31,7 @@ class AuditLog(Base):
     api_key_id = Column(
         UUID(as_uuid=True), ForeignKey("api_keys.id"), nullable=True
     )
+    agent_type = Column(String(50), nullable=True)
     model = Column(String(100), nullable=False)
     provider = Column(String(50), nullable=True)
     method = Column(String(10), nullable=False)
@@ -51,4 +53,9 @@ class AuditLog(Base):
         Index("ix_audit_logs_user_timestamp", "user_id", "timestamp"),
         Index("ix_audit_logs_dept_timestamp", "department", "timestamp"),
         Index("ix_audit_logs_model_timestamp", "model", "timestamp"),
+        Index(
+            "ix_audit_logs_status_pending",
+            "status",
+            postgresql_where=text("status = 'pending'"),
+        ),
     )

@@ -1,5 +1,11 @@
+"""Anthropic Messages API gateway endpoint.
+
+Provides a native Anthropic-compatible endpoint at POST /v1/messages
+so that Claude Code and other Anthropic-native clients can use GateFlow
+directly with their SDK.
+"""
+
 import logging
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -14,29 +20,30 @@ from app.services.provider_adapters import get_adapter
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/v1", tags=["OpenAI Compatible Gateway"])
+router = APIRouter(prefix="/v1", tags=["Anthropic Gateway"])
 
 
-@router.post("/chat/completions")
-async def chat_completions(
+@router.post("/messages")
+async def messages(
     request: Request,
     auth: AuthContext = Depends(get_auth_context),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    OpenAI-compatible chat completions endpoint.
+    Anthropic Messages API endpoint.
 
-    Accepts standard OpenAI chat completion requests and forwards them
-    to the configured upstream provider. Supports both streaming and
-    non-streaming modes.
+    Accepts Anthropic-format requests and forwards them to the configured
+    upstream provider. Supports both streaming and non-streaming modes.
 
     Usage:
-        POST /v1/chat/completions
+        POST /v1/messages
         Authorization: Bearer gf_xxx (API Key) or Bearer <jwt_token>
+        x-api-key: gf_xxx  (also accepted)
         Content-Type: application/json
 
         {
-            "model": "gpt-4",
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 1024,
             "messages": [{"role": "user", "content": "Hello"}],
             "stream": false
         }
@@ -58,6 +65,12 @@ async def chat_completions(
             status_code=400, detail="Missing or invalid field: messages"
         )
 
+    # Anthropic requires max_tokens
+    if not body.get("max_tokens"):
+        raise HTTPException(
+            status_code=400, detail="Missing required field: max_tokens"
+        )
+
     is_stream = body.get("stream", False)
 
     # Find model config
@@ -75,8 +88,9 @@ async def chat_completions(
             detail=f"Model not found or inactive: {model_alias}",
         )
 
-    # Forward request using the provider's adapter
-    adapter = get_adapter(model_config.provider)
+    # Use Anthropic adapter (regardless of model_config.provider, since the
+    # client is sending Anthropic-format requests)
+    adapter = get_adapter("anthropic")
     gateway_service = GatewayService(db, adapter)
 
     try:
@@ -86,45 +100,18 @@ async def chat_completions(
             request_body=body,
             is_stream=is_stream,
             request=request,
-            path="/v1/chat/completions",
+            path="/v1/messages",
             api_key_id=auth.api_key_id,
             agent_type=auth.agent_type,
         )
     except GatewayError as e:
-        return JSONResponse(status_code=e.status_code, content={"error": {"message": e.detail}})
+        return JSONResponse(
+            status_code=e.status_code,
+            content=adapter.format_error(e.status_code, {"detail": e.detail}),
+        )
     except Exception as e:
-        logger.error(f"Gateway error: {e}", exc_info=True)
+        logger.error(f"Anthropic gateway error: {e}", exc_info=True)
         return JSONResponse(
             status_code=500,
-            content={"error": {"message": "Internal gateway error", "type": "internal_error"}},
+            content=adapter.format_error(500, {"detail": "Internal gateway error"}),
         )
-
-
-@router.get("/models")
-async def list_models(
-    auth: AuthContext = Depends(get_auth_context),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    List available models (OpenAI-compatible format).
-
-    Returns models in the OpenAI /v1/models response format,
-    filtered to only active model configurations.
-    """
-    result = await db.execute(
-        select(ModelConfig).where(ModelConfig.is_active == True)
-    )
-    models = result.scalars().all()
-
-    return {
-        "object": "list",
-        "data": [
-            {
-                "id": m.model_alias,
-                "object": "model",
-                "created": int(m.created_at.timestamp()) if m.created_at else 0,
-                "owned_by": m.provider,
-            }
-            for m in models
-        ],
-    }

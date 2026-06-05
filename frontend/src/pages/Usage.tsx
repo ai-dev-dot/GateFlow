@@ -7,12 +7,13 @@ import type { UsageSummaryItem } from '../types';
 
 const { RangePicker } = DatePicker;
 
-type Dimension = 'model' | 'department' | 'user';
+type Dimension = 'model' | 'department' | 'user' | 'api_key';
 
 const dimensionOptions = [
   { value: 'model', label: '模型' },
   { value: 'department', label: '部门' },
   { value: 'user', label: '用户' },
+  { value: 'api_key', label: '客户端' },
 ];
 
 /** 格式化大数字：1.2M / 3.5K */

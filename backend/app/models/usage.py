@@ -17,6 +17,11 @@ class UsageStat(Base):
     )
     model = Column(String(100), nullable=False, index=True)
     department = Column(String(100), nullable=True, index=True)
+    api_key_id = Column(
+        UUID(as_uuid=True), ForeignKey("api_keys.id"), nullable=True, index=True
+    )
+    api_key_name = Column(String(100), nullable=True)
+    agent_type = Column(String(50), nullable=True)
     request_count = Column(Integer, default=0, nullable=False)
     input_tokens = Column(BigInteger, default=0, nullable=False)
     output_tokens = Column(BigInteger, default=0, nullable=False)

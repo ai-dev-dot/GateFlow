@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, async_session
 from app.models import Base
+from app.models.agent_type import AgentType
 from app.services.auth_service import AuthService
 from app.utils.http_client import close_http_client
 from app.routers.auth import router as auth_router
@@ -14,6 +15,8 @@ from app.routers.gateway_forward import router as gateway_forward_router
 from app.routers.audit import router as audit_router
 from app.routers.usage import router as usage_router
 from app.routers.chat import router as chat_router
+from app.routers.anthropic_forward import router as anthropic_forward_router
+from app.routers.agent_types import router as agent_types_router
 
 
 @asynccontextmanager
@@ -26,6 +29,15 @@ async def lifespan(app: FastAPI):
     async with async_session() as db:
         auth_service = AuthService(db)
         await auth_service.init_admin()
+
+    # Seed default AgentType values
+    async with async_session() as db:
+        from sqlalchemy import select
+        result = await db.execute(select(AgentType).limit(1))
+        if not result.scalar_one_or_none():
+            for name in ["Claude Code", "Codex", "Cursor", "Dify", "LangChain", "自定义"]:
+                db.add(AgentType(name=name))
+            await db.commit()
 
     yield
 
@@ -50,9 +62,11 @@ app.include_router(api_keys_router)
 app.include_router(provider_keys_router)
 app.include_router(gateway_router)
 app.include_router(gateway_forward_router)
+app.include_router(anthropic_forward_router)
 app.include_router(audit_router)
 app.include_router(usage_router)
 app.include_router(chat_router)
+app.include_router(agent_types_router)
 
 
 @app.get("/health")
