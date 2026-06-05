@@ -29,7 +29,7 @@ GateFlow/
 │   │   │   ├── gateway.py             # ModelConfig
 │   │   │   ├── chat.py                # Conversation, Message
 │   │   │   ├── audit.py               # AuditLog
-│   │   │   └── usage.py               # UsageStat
+│   │   │   └── audit.py               # 请求日志模型（统计也基于此）
 │   │   ├── schemas/
 │   │   │   ├── __init__.py
 │   │   │   ├── auth.py
@@ -485,31 +485,7 @@ class AuditLog(Base):
     )
 ```
 
-- [ ] **Step 2: 创建 usage.py**
-
-```python
-# backend/app/models/usage.py
-import uuid
-from datetime import datetime
-from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, BigInteger, Date
-from sqlalchemy.dialects.postgresql import UUID
-from app.models.base import Base
-
-
-class UsageStat(Base):
-    __tablename__ = "usage_stats"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    date = Column(Date, nullable=False, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
-    model = Column(String(100), nullable=False, index=True)
-    department = Column(String(100), nullable=True, index=True)
-    request_count = Column(Integer, default=0)
-    input_tokens = Column(BigInteger, default=0)
-    output_tokens = Column(BigInteger, default=0)
-    total_tokens = Column(BigInteger, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-```
+- [ ] **Step 2: ~~创建 usage.py~~（已删除 — 用量统计改为从 AuditLog 实时聚合）**
 
 - [ ] **Step 3: 创建 chat.py**
 
@@ -557,12 +533,11 @@ from app.models.api_key import APIKey
 from app.models.provider_key import ProviderAPIKey
 from app.models.gateway import ModelConfig
 from app.models.audit import AuditLog
-from app.models.usage import UsageStat
 from app.models.chat import Conversation, Message
 
 __all__ = [
     "Base", "User", "Role", "Department", "APIKey", "ProviderAPIKey",
-    "ModelConfig", "AuditLog", "UsageStat", "Conversation", "Message"
+    "ModelConfig", "AuditLog", "Conversation", "Message"
 ]
 ```
 
@@ -1986,14 +1961,8 @@ class GatewayService:
         else:
             await self.key_service.update_key_error(key_id, status_code)
         
-        # 更新用户用量统计
-        await self.usage_service.record_usage(
-            user_id=user.id,
-            model=model,
-            department=user.department.name if user.department else None,
-            input_tokens=request_tokens,
-            output_tokens=response_tokens
-        )
+        # 注意：不再调用 usage_service.record_usage()
+        # 用量统计从 AuditLog 实时 GROUP BY 聚合（见 Task 12）
 ```
 
 - [ ] **Step 3: 创建网关转发路由**
@@ -2185,84 +2154,148 @@ class AuditService:
         return result.scalars().all()
 ```
 
-- [ ] **Step 2: 创建 usage_service.py**
+- [ ] **Step 2: 创建 usage_service.py（从 AuditLog 实时聚合）**
 
 ```python
 # backend/app/services/usage_service.py
-from datetime import date
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from app.models import UsageStat
+from datetime import date, datetime, time
 from typing import Optional
 from uuid import UUID
 
+from sqlalchemy import select, func, null
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.audit import AuditLog
+from app.models.user import User, Department
+
 
 class UsageService:
+    """用量统计服务：从 AuditLog 实时 GROUP BY 聚合。
+
+    department / user 维度 JOIN users / departments，
+    保证反映的是用户当前的部门和用户名（admin 改部门、删部门后立即跟随）。
+    """
+
     def __init__(self, db: AsyncSession):
         self.db = db
-    
-    async def record_usage(
-        self, user_id: UUID, model: str, department: Optional[str],
-        input_tokens: int, output_tokens: int
-    ):
-        """记录用量统计"""
-        today = date.today()
-        
-        result = await self.db.execute(
-            select(UsageStat).where(
-                UsageStat.date == today,
-                UsageStat.user_id == user_id,
-                UsageStat.model == model
-            )
-        )
-        stat = result.scalar_one_or_none()
-        
-        if stat:
-            stat.request_count += 1
-            stat.input_tokens += input_tokens
-            stat.output_tokens += output_tokens
-            stat.total_tokens += input_tokens + output_tokens
-        else:
-            stat = UsageStat(
-                date=today,
-                user_id=user_id,
-                model=model,
-                department=department,
-                request_count=1,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                total_tokens=input_tokens + output_tokens
-            )
-            self.db.add(stat)
-        
-        await self.db.commit()
-    
+
     async def get_summary(
-        self, dimension: str, start_date: Optional[date] = None, end_date: Optional[date] = None
-    ):
-        """获取用量统计摘要"""
-        query = select(
-            UsageStat.department if dimension == "department" else
-            UsageStat.model if dimension == "model" else
-            UsageStat.user_id,
-            func.sum(UsageStat.request_count).label("total_requests"),
-            func.sum(UsageStat.input_tokens).label("input_tokens"),
-            func.sum(UsageStat.output_tokens).label("output_tokens"),
-            func.sum(UsageStat.total_tokens).label("total_tokens")
-        )
-        
+        self,
+        dimension: str = "user",
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        user_id: Optional[UUID] = None,
+    ) -> list:
+        """dimension: "user" | "department" | "model" | "api_key"
+        所有维度返回 6 个字段（dimension / username / request_count /
+        input_tokens / output_tokens / total_tokens），非 user 维度 username 为 null。
+        """
+        filters = [AuditLog.status_code.isnot(None)]  # 排除 pending
+        if user_id:
+            filters.append(AuditLog.user_id == user_id)
         if start_date:
-            query = query.where(UsageStat.date >= start_date)
+            filters.append(AuditLog.timestamp >= datetime.combine(start_date, time.min))
         if end_date:
-            query = query.where(UsageStat.date <= end_date)
-        
-        group_by = (
-            UsageStat.department if dimension == "department" else
-            UsageStat.model if dimension == "model" else
-            UsageStat.user_id
-        )
-        query = query.group_by(group_by)
-        
+            filters.append(AuditLog.timestamp < datetime.combine(end_date, time.max))
+
+        if dimension == "user":
+            query = (
+                select(
+                    AuditLog.user_id,
+                    User.username.label("username"),
+                    func.count().label("request_count"),
+                    func.coalesce(func.sum(AuditLog.request_tokens), 0).label("input_tokens"),
+                    func.coalesce(func.sum(AuditLog.response_tokens), 0).label("output_tokens"),
+                    func.coalesce(func.sum(AuditLog.total_tokens), 0).label("total_tokens"),
+                )
+                .join(User, User.id == AuditLog.user_id)
+                .where(*filters)
+                .group_by(AuditLog.user_id, User.username)
+            )
+        elif dimension == "department":
+            # LEFT JOIN Department：用户无部门时 name 为 NULL，前端显示 "未知"
+            query = (
+                select(
+                    Department.name.label("dimension"),
+                    null().label("username"),
+                    func.count().label("request_count"),
+                    func.coalesce(func.sum(AuditLog.request_tokens), 0).label("input_tokens"),
+                    func.coalesce(func.sum(AuditLog.response_tokens), 0).label("output_tokens"),
+                    func.coalesce(func.sum(AuditLog.total_tokens), 0).label("total_tokens"),
+                )
+                .join(User, User.id == AuditLog.user_id)
+                .outerjoin(Department, Department.id == User.department_id)
+                .where(*filters)
+                .group_by(Department.name)
+            )
+        elif dimension == "model":
+            query = (
+                select(
+                    AuditLog.model.label("dimension"),
+                    null().label("username"),
+                    func.count().label("request_count"),
+                    func.coalesce(func.sum(AuditLog.request_tokens), 0).label("input_tokens"),
+                    func.coalesce(func.sum(AuditLog.response_tokens), 0).label("output_tokens"),
+                    func.coalesce(func.sum(AuditLog.total_tokens), 0).label("total_tokens"),
+                )
+                .where(*filters)
+                .group_by(AuditLog.model)
+            )
+        elif dimension == "api_key":
+            query = (
+                select(
+                    AuditLog.api_key_name.label("dimension"),
+                    null().label("username"),
+                    func.count().label("request_count"),
+                    func.coalesce(func.sum(AuditLog.request_tokens), 0).label("input_tokens"),
+                    func.coalesce(func.sum(AuditLog.response_tokens), 0).label("output_tokens"),
+                    func.coalesce(func.sum(AuditLog.total_tokens), 0).label("total_tokens"),
+                )
+                .where(*filters)
+                .group_by(AuditLog.api_key_name)
+            )
+        else:
+            raise ValueError(f"不支持的聚合维度: {dimension}")
+
+        query = query.order_by(func.coalesce(func.sum(AuditLog.total_tokens), 0).desc())
+        result = await self.db.execute(query)
+        rows = result.all()
+
+        return [
+            {
+                "dimension": str(row[0]) if row[0] is not None else "未知",
+                "username": row[1],
+                "request_count": row[2],
+                "input_tokens": row[3],
+                "output_tokens": row[4],
+                "total_tokens": row[5],
+            }
+            for row in rows
+        ]
+
+    async def get_trend(
+        self,
+        user_id: UUID | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> list:
+        """按日聚合用量趋势"""
+        query = select(
+            func.date(AuditLog.timestamp).label("date"),
+            func.count().label("request_count"),
+            func.coalesce(func.sum(AuditLog.request_tokens), 0).label("input_tokens"),
+            func.coalesce(func.sum(AuditLog.response_tokens), 0).label("output_tokens"),
+            func.coalesce(func.sum(AuditLog.total_tokens), 0).label("total_tokens"),
+        ).where(AuditLog.status_code.isnot(None))
+
+        if user_id:
+            query = query.where(AuditLog.user_id == user_id)
+        if start_date:
+            query = query.where(AuditLog.timestamp >= datetime.combine(start_date, time.min))
+        if end_date:
+            query = query.where(AuditLog.timestamp < datetime.combine(end_date, time.max))
+
+        query = query.group_by(func.date(AuditLog.timestamp)).order_by(func.date(AuditLog.timestamp))
         result = await self.db.execute(query)
         return result.all()
 ```
@@ -2315,45 +2348,72 @@ async def list_logs(
 
 ```python
 # backend/app/routers/usage.py
+from datetime import date
+from typing import Optional
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
-from datetime import date
+
 from app.database import get_db
-from app.models import User
+from app.middleware.auth_middleware import get_current_user, require_admin
+from app.models.user import User
 from app.services.usage_service import UsageService
-from app.middleware.auth_middleware import get_current_user
 
 router = APIRouter(prefix="/api/usage", tags=["用量统计"])
 
 
+# 管理员接口
 @router.get("/summary")
 async def get_usage_summary(
-    dimension: str = Query(..., regex="^(user|department|model)$"),
+    dimension: str = Query("user", description="聚合维度: user/department/model/api_key"),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    service = UsageService(db)
+    items = await service.get_summary(
+        dimension=dimension, start_date=start_date, end_date=end_date
+    )
+    return {"dimension": dimension, "items": items}
+
+
+@router.get("/trend")
+async def get_usage_trend(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    data = await UsageService(db).get_trend(start_date=start_date, end_date=end_date)
+    return {"data": [...]}
+
+
+# 普通用户接口（仅自身数据）
+@router.get("/my-summary")
+async def get_my_usage_summary(
+    dimension: str = Query("model", description="聚合维度: model/api_key"),
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
     user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
-    """获取用量统计摘要"""
-    usage_service = UsageService(db)
-    data = await usage_service.get_summary(
-        dimension=dimension, start_date=start_date, end_date=end_date
+    service = UsageService(db)
+    items = await service.get_summary(
+        dimension=dimension, start_date=start_date, end_date=end_date, user_id=user.id
     )
-    
-    return {
-        "dimension": dimension,
-        "data": [
-            {
-                "name": str(row[0]),
-                "total_requests": row[1],
-                "input_tokens": row[2],
-                "output_tokens": row[3],
-                "total_tokens": row[4]
-            }
-            for row in data
-        ]
-    }
+    return {"dimension": dimension, "items": items}
+
+
+@router.get("/my-trend")
+async def get_my_usage_trend(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    data = await UsageService(db).get_trend(user_id=user.id, start_date=start_date, end_date=end_date)
+    return {"data": [...]}
 ```
 
 - [ ] **Step 5: 注册路由**

@@ -134,8 +134,7 @@ GateFlow/
 │   │   │   ├── provider_key.py    # 上游 API Key 模型
 │   │   │   ├── gateway.py         # 模型路由配置
 │   │   │   ├── chat.py            # 对话、消息模型
-│   │   │   ├── audit.py           # 请求日志模型
-│   │   │   └── usage.py           # 用量统计模型
+│   │   │   ├── audit.py           # 请求日志模型（统计也基于此）
 │   │   ├── schemas/               # Pydantic 请求/响应模型
 │   │   │   ├── user.py
 │   │   │   ├── api_key.py
@@ -143,7 +142,6 @@ GateFlow/
 │   │   │   ├── gateway.py
 │   │   │   ├── chat.py
 │   │   │   ├── audit.py
-│   │   │   └── usage.py
 │   │   ├── routers/               # API 路由
 │   │   │   ├── auth.py            # 登录、注册、Token
 │   │   │   ├── users.py           # 用户管理
@@ -409,21 +407,14 @@ async def forward_stream_request(user, model, request_body):
                 yield chunk  # 收到一块就转发一块，用户无感知延迟
                 full_response += chunk.decode("utf-8")
             
-            # 3. 响应结束后，异步更新日志和用量统计
+            # 3. 响应结束后，更新审计日志（含 token 用量）
+            #    注意：用量统计从 AuditLog 实时聚合，不再单独维护用量表
             await audit_service.update_log_after_response(
                 log_id=log_id,
                 status_code=response.status_code,
                 request_tokens=count_tokens(request_body["messages"]),
                 response_tokens=count_tokens(full_response),
                 latency_ms=int((time.time() - start_time) * 1000)
-            )
-            
-            # 4. 更新用户用量统计
-            await usage_service.record_usage(
-                user_id=user.id,
-                model=model,
-                input_tokens=request_tokens,
-                output_tokens=response_tokens
             )
 ```
 
@@ -796,62 +787,104 @@ GET /api/audit/logs?
 
 ## 7. 用量统计模块
 
-### 7.1 统计维度
+### 7.1 架构原则：单数据源
+
+用量统计**不再单独维护聚合表**，而是直接从 `AuditLog` 实时 `GROUP BY` 聚合。
+
+理由：
+- `AuditLog` 是每条 LLM 调用的完整记录，**已经是事实源**（source of truth）
+- 单独维护聚合表（如 `UsageStat`）会引入"快照漂移"问题：用户改部门、删部门、统计表里的旧记录跟不上
+- MVP 阶段调用量不大，`AuditLog` 实时聚合的性能完全够用
+- 避免双写一致性问题（写 AuditLog 成功 + 写 UsageStat 失败的窗口期）
+
+**特殊处理：**
+- `dimension=user` 维度：JOIN `users.username`，显示真实用户名（不显示 UUID）
+- `dimension=department` 维度：JOIN `users` + `departments`，**反映用户的当前部门**（admin 把人挪到新部门后，stats 立即跟随）
+- 用户无部门时 `Department.name` 为 NULL，前端显示为"未知"
+- 排除 `status_code IS NULL` 的 pending 日志，只统计已完成的调用
+
+### 7.2 统计维度
 
 MVP 阶段只统计 Token 用量和各维度占比，金额计算列入后续版本。
 
 **统计维度：**
 - Token 用量（输入/输出分开统计）
 - 模型占比（哪个模型用得最多）
-- 用户占比（谁用得最多）
-- 部门占比（哪个部门用得最多）
-- API Key 占比（哪个工具用得最多，v0.2.0 新增）—— 通过 `api_key_id` 关联，每个 Key 可标记用途（如"Claude Code"、"Codex"、"Cursor"）
+- 用户占比（谁用得最多，显示真实用户名）
+- 部门占比（哪个部门用得最多，**反映当前部门结构**）
+- API Key 占比（哪个工具用得最多）—— 通过 `api_key_id` 关联，每个 Key 可标记用途（如"Claude Code"、"Codex"、"Cursor"）
 - 请求次数统计
 
-### 7.2 统计 API
+### 7.3 统计 API
 
 ```
 GET /api/usage/summary?
     dimension=user        # 按用户统计
-    &start_time=...
-    &end_time=...
+    &start_date=YYYY-MM-DD
+    &end_date=YYYY-MM-DD
 
 GET /api/usage/summary?
-    dimension=department  # 按部门统计
-    &start_time=...
-    &end_time=...
+    dimension=department  # 按部门统计（JOIN 当前部门）
+    &start_date=...
+    &end_date=...
 
 GET /api/usage/summary?
     dimension=model       # 按模型统计
-    &start_time=...
-    &end_time=...
+    &start_date=...
+    &end_date=...
 
 GET /api/usage/summary?
-    dimension=api_key     # 按 API Key 统计（v0.2.0 新增）
-    &start_time=...
-    &end_time=...
+    dimension=api_key     # 按 API Key 统计
+    &start_date=...
+    &end_date=...
+
+GET /api/usage/trend?
+    &start_date=...
+    &end_date=...
+    # 按日聚合用量趋势
+
+# 普通用户端（仅查自己）
+GET /api/usage/my-summary?dimension=model|api_key&start_date=...&end_date=...
+GET /api/usage/my-trend?start_date=...&end_date=...
 ```
 
-### 7.3 返回示例
+### 7.4 返回示例
 
 ```json
+GET /api/usage/summary?dimension=department
 {
     "dimension": "department",
-    "period": "2026-06",
-    "data": [
+    "items": [
         {
-            "name": "技术部",
-            "total_requests": 12500,
-            "input_tokens": 3200000,
-            "output_tokens": 2000000,
-            "total_tokens": 5200000
+            "dimension": "测试部",
+            "username": null,
+            "request_count": 11,
+            "input_tokens": 26,
+            "output_tokens": 3059,
+            "total_tokens": 3085
         },
         {
-            "name": "产品部",
-            "total_requests": 3200,
-            "input_tokens": 700000,
-            "output_tokens": 400000,
-            "total_tokens": 1100000
+            "dimension": "系统信息部",
+            "username": null,
+            "request_count": 10,
+            "input_tokens": 25,
+            "output_tokens": 785,
+            "total_tokens": 810
+        }
+    ]
+}
+
+GET /api/usage/summary?dimension=user
+{
+    "dimension": "user",
+    "items": [
+        {
+            "dimension": "301dbaa7-6bbe-44dc-bef4-0951322cc59f",
+            "username": "test001",
+            "request_count": 11,
+            "input_tokens": 26,
+            "output_tokens": 3059,
+            "total_tokens": 3085
         }
     ]
 }
@@ -1073,7 +1106,7 @@ GET /api/usage/summary?
 
 ### B.1 异步任务处理
 
-**问题：** 流式响应结束后的日志更新和用量统计，如果在同一个请求线程中处理，会阻塞最后一个 chunk 的返回。
+**问题：** 流式响应结束后的日志更新（写 AuditLog + 更新 API Key 统计），如果在同一个请求线程中处理，会阻塞最后一个 chunk 的返回。
 
 **解决方案：** 使用 `asyncio.create_task()` 创建后台任务，不要等待它完成：
 
@@ -1095,14 +1128,8 @@ async def forward_stream_request():
         )
     )
     
-    asyncio.create_task(
-        usage_service.record_usage(
-            user_id=user.id,
-            model=model,
-            input_tokens=request_tokens,
-            output_tokens=response_tokens
-        )
-    )
+    # 注意：不再调用 usage_service.record_usage()。
+    # 用量统计从 AuditLog 实时 GROUP BY 聚合，避免双写不一致。
 ```
 
 ### B.2 并发安全的统计更新
@@ -1152,7 +1179,9 @@ if len(request_body_str) > MAX_LOG_CONTENT_LENGTH:
 **解决方案：** 把不同的操作放在不同的事务中：
 
 - **事务 1：** 网关转发和 API Key 状态更新
-- **事务 2：** 审计日志和用量统计
+- **事务 2：** 审计日志更新
+
+用量统计直接从 AuditLog 实时 GROUP BY 聚合（见第 7 章），不再单独维护聚合表，**没有独立的事务**。
 
 即使日志记录失败，也不影响用户的正常请求。
 
