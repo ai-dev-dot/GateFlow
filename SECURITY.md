@@ -4,9 +4,7 @@
 
 如果你发现了安全漏洞，**请不要在公开 issue 中披露**。
 
-推荐通过 [GitHub Security Advisories](https://github.com/ai-dev-dot/GateFlow/security/advisories/new) 私下报告。
-
-备选渠道：邮件 `security@<your-domain>`（请将 `<your-domain>` 替换为你的实际域名）。
+请通过 [GitHub Security Advisories](https://github.com/ai-dev-dot/GateFlow/security/advisories/new) 私下报告。
 
 ## 报告内容
 
