@@ -33,7 +33,14 @@ class AuditLog(Base):
     provider = Column(String(50), nullable=True)
     method = Column(String(10), nullable=False)
     path = Column(String(255), nullable=False)
+    # Fernet-encrypted full request body. Populated only when
+    # `AUDIT_LOG_FULL_BODY=true`. None otherwise. NEVER returned in any
+    # list response — only via `GET /api/audit/logs/{id}?include_body=true`
+    # (admin-only, with meta-audit write).
     request_body = Column(Text, nullable=True)
+    # Plaintext preview of the request body, first N characters (see
+    # settings.AUDIT_LOG_PREVIEW_CHARS). Safe to return in list responses.
+    request_body_preview = Column(Text, nullable=True)
     request_tokens = Column(Integer, default=0, nullable=False)
     response_tokens = Column(Integer, default=0, nullable=False)
     total_tokens = Column(Integer, default=0, nullable=False)

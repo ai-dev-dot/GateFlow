@@ -3,20 +3,30 @@
 提供统一的 pending 创建 + 完成后更新接口。StreamForwarder 在流结束后
 调用 `record_completion()` 统一处理 status 字段（"completed"/"failed"）和
 token 累加（避免之前 gateway_service 与 chat_service 两处实现漂移的问题）。
+
+数据存储策略（见 README "数据存储与隐私" + spec §6.3）：
+- `request_body_preview`：明文前 200 字符，永远写入
+- `request_body`：仅当 `AUDIT_LOG_FULL_BODY=true` 时写入（Fernet 加密）
+  永远不通过 list/detail 接口自动返回，必须显式 `?include_body=true` + admin
 """
 
+import json
 from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.models.audit import AuditLog
+from app.utils.crypto import decrypt_key, encrypt_key
 
 
 class AuditService:
     """审计日志服务：记录和查询 API 调用日志"""
 
+    # Hard ceiling for stored body (whether encrypted or not). Protects
+    # the DB from pathological inputs.
     MAX_LOG_CONTENT_LENGTH = 100 * 1024  # 100KB
 
     def __init__(self, db: AsyncSession):
@@ -43,11 +53,27 @@ class AuditService:
 
         注意：调用方需要负责 commit（或由 StreamForwarder 统一处理）。
         这里用 flush 而不是 commit，避免在请求作用域内强制落盘。
+
+        Body storage (per data policy):
+        - `request_body_preview` = first N chars, always plaintext
+        - `request_body` = Fernet-encrypted full body, only when
+          `AUDIT_LOG_FULL_BODY=true`; None otherwise
         """
-        # 截断过长的请求体
-        truncated_body = None
+        settings = get_settings()
+
+        preview = None
+        encrypted_body = None
+
         if request_body:
-            truncated_body = request_body[: self.MAX_LOG_CONTENT_LENGTH]
+            # Truncate to the hard ceiling to protect the DB
+            truncated = request_body[: self.MAX_LOG_CONTENT_LENGTH]
+
+            # Always: short plaintext preview for list/detail display
+            preview = truncated[: settings.AUDIT_LOG_PREVIEW_CHARS]
+
+            # Conditionally: encrypted full body
+            if settings.AUDIT_LOG_FULL_BODY:
+                encrypted_body = encrypt_key(truncated)
 
         log = AuditLog(
             user_id=user.id,
@@ -57,7 +83,8 @@ class AuditService:
             provider=provider,
             method=method,
             path=path,
-            request_body=truncated_body,
+            request_body=encrypted_body,
+            request_body_preview=preview,
             is_stream=is_stream,
             status="pending",
             api_key_id=api_key_id,
@@ -69,6 +96,13 @@ class AuditService:
         self.db.add(log)
         await self.db.flush()
         return log
+
+    @staticmethod
+    def decrypt_request_body(encrypted: str) -> str:
+        """Decrypt an `AuditLog.request_body` field. Raises if the value
+        is not a valid Fernet token (corrupted row or wrong ENCRYPTION_KEY).
+        """
+        return decrypt_key(encrypted)
 
     async def record_completion(
         self,
@@ -93,6 +127,46 @@ class AuditService:
         log.status = "completed" if status_code == 200 else "failed"
 
     # ---------- 读取路径（管理后台用）----------
+
+    async def record_admin_access(
+        self,
+        admin_user,
+        target_log: AuditLog,
+        ip_address: str | None = None,
+    ) -> AuditLog:
+        """Write a meta-audit row when an admin views another user's log body.
+
+        Path is fixed to `/admin/audit-access` so this category of access
+        can be queried/alerted on independently of regular LLM calls.
+        The `request_body` field carries a JSON blob with the target log id
+        and target user id (the actual prompt content is NOT duplicated here).
+        """
+        meta_payload = json.dumps(
+            {
+                "action": "view_log_body",
+                "target_log_id": str(target_log.id),
+                "target_user_id": str(target_log.user_id),
+                "target_path": target_log.path,
+            },
+            ensure_ascii=False,
+        )
+        log = AuditLog(
+            user_id=admin_user.id,
+            username=admin_user.username,
+            department=admin_user.department.name if admin_user.department else None,
+            model="-",
+            provider="-",
+            method="GET",
+            path="/admin/audit-access",
+            request_body_preview=meta_payload[: get_settings().AUDIT_LOG_PREVIEW_CHARS],
+            is_stream=False,
+            status="completed",
+            ip_address=ip_address,
+            user_agent=None,
+        )
+        self.db.add(log)
+        await self.db.flush()
+        return log
 
     async def get_log_by_id(self, log_id: UUID, user) -> AuditLog | None:
         """Get audit log by ID, non-admin can only see own logs"""

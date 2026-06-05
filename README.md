@@ -90,6 +90,31 @@ api_key  = "gf_your_enterprise_token"        # 闸机发的 Token
 - **多维度用量统计**：按用户、部门、模型、客户端实时聚合
 - **双模身份认证**：JWT 与 API Key 并存，支持部门和角色
 
+## 数据存储与隐私
+
+我们对待 LLM 调用日志的态度：**默认最小化，访问受控，留痕可审计。**
+
+| 存储内容 | 加密 | 谁能看到 |
+|----------|------|----------|
+| 调用 metadata（模型/tokens/耗时/用户/部门/IP） | 否 | 用户自己（自己的日志）+ admin（全量） |
+| Prompt 前 200 字符预览 | 否 | 同上（用于 debug 时快速看上下文） |
+| 完整 Prompt 全文 | **Fernet 加密** | **只有 admin 显式带 `?include_body=true` 才返**，且每次访问写 meta-audit |
+| 完整 Response 全文 | **Fernet 加密** | 同上 |
+
+**Admin 访问完整 body 会被记录**：`/admin/audit-access` 路径专门记录"admin 何时查看了谁的日志"，方便后续审计与告警。
+
+**参考业界头部做法**：OpenAI Enterprise、Anthropic Console、Cloudflare AI Gateway、AWS Bedrock 都默认不存 body 或做受控访问。GateFlow 选"存加密 + 受控访问"是因为企业内部 debug 经常需要完整上下文。
+
+**配置开关**（`.env`）：
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `AUDIT_LOG_FULL_BODY` | `false` | `true` 时写加密 body，`false` 时只写前 200 字符预览 |
+| `AUDIT_LOG_RETENTION_DAYS` | `90` | 日志保留天数（v0.2.0 实现自动清理） |
+| `ENABLE_PII_REDACTION` | `false` | 启用 Presidio 自动 PII 脱敏（v0.2.0） |
+
+**API Key 与上游 Key**：以 Fernet 加密（上游 Key）+ HMAC 哈希（API Key）形式存储，**任何 list 接口都不返回明文**。完整 Key 仅在创建时一次性返回。
+
 ## 技术栈
 
 - **后端**：Python 3.13 · FastAPI · SQLAlchemy (async) · PostgreSQL

@@ -753,7 +753,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 | provider | string | 提供商 |
 | method | string | HTTP 方法 |
 | path | string | 请求路径 |
-| request_body | text | 请求体（完整记录） |
+| request_body | text | 请求体（**Fernet 加密落库**；只对 admin 显式请求可见） |
+| request_body_preview | text | 请求体前 200 字符（明文预览，用于列表/详情展示） |
 | request_tokens | int | 输入 Token 数（流式响应结束后更新） |
 | response_tokens | int | 输出 Token 数（流式响应结束后更新） |
 | total_tokens | int | 总 Token 数 |
@@ -803,10 +804,73 @@ GET /api/audit/logs?
     &page_size=20
 ```
 
-### 6.3 敏感数据处理
+### 6.3 数据存储策略
 
-- MVP 阶段：记录完整请求和响应（企业内部使用，需要完整审计）
-- 后续迭代：可配置脱敏规则（手机号、身份证号自动打码）
+> **核心原则：默认最小化存储，访问受控，留痕可审计。**
+
+**写入策略：**
+
+| 字段 | 写入什么 | 谁能看到 |
+|------|----------|----------|
+| `request_body_preview` | prompt 前 200 字符（明文） | 列表/详情接口都返 |
+| `request_body` | 完整 prompt（**Fernet 加密**） | **只有 admin 显式带 `?include_body=true` 才返** |
+| `response_body` | 完整 response（Fernet 加密） | 同上 |
+| 其余 metadata（model/tokens/latency 等） | 明文 | 列表接口按 RBAC 可见 |
+
+**读取策略：**
+
+- 列表接口 `GET /api/audit/logs` 永远不返回 `request_body`/`response_body`，只返回 metadata + `request_body_preview`
+- 详情接口 `GET /api/audit/logs/{id}` 默认同上，**带 `?include_body=true` 时**：
+  - 验证调用者角色是 admin
+  - 解密 `request_body`/`response_body` 返回
+  - 写入 meta-audit：`AuditLog{path="/admin/audit-access", user_id=admin, request_body=log_id, ...}`
+- 非 admin 永远不能看他人日志的 body（即使是 admin 看自己的也不行——admin 角色看 body 也要走 meta-audit）
+
+**为什么这样设计（参考业界头部产品）：**
+
+- **OpenAI Enterprise / Anthropic Console** 默认不存 prompt body
+- **Cloudflare AI Gateway / AWS Bedrock** 默认只存 metadata，body opt-in
+- **Helicone / Portkey** 提供 PII 脱敏 filter
+- GateFlow 选择"存加密 + 受控访问 + 留痕"，因为企业内部 debug 经常需要看 prompt 完全上下文，比 opt-in 更方便；同时加访问控制避免"admin 一键全拿"
+
+**可配置项：**
+
+| 配置 | 默认 | 说明 |
+|------|------|------|
+| `AUDIT_LOG_FULL_BODY` | `false` | `true` 时不存 `request_body`/`response_body`（连加密都不存，最小化） |
+| `AUDIT_LOG_RETENTION_DAYS` | `90` | 超过 N 天的日志由后台任务清理（v0.2.0 实现） |
+| `ENABLE_PII_REDACTION` | `false` | `true` 时接入 Presidio 自动识别 email/phone/身份证/银行卡/AWS Key 等并打码（v0.2.0 实现） |
+
+### 6.4 Admin 访问 body 的 meta-audit
+
+Admin 看他人日志的 body 必须留痕——这是 GDPR / SOC 2 的硬要求。
+
+```
+请求：GET /api/audit/logs/abc-123?include_body=true
+       Authorization: Bearer <admin_token>
+
+服务：
+  1. 验证 admin 角色
+  2. 解密 abc-123 的 request_body
+  3. 写一条新 AuditLog：
+     {
+       user_id: <admin.id>,
+       path: "/admin/audit-access",
+       request_body: '{"target_log_id":"abc-123","target_user_id":"...",...}',
+       status: "completed"
+     }
+  4. 返回原 log 详情
+```
+
+**`/admin/audit-access` 路径前缀**专门用于这类"admin 操作他人数据"的审计，方便后续独立查询/告警。
+
+### 6.5 后续迭代（不在 MVP）
+
+- v0.2.0：Presidio 集成 PII 自动脱敏（详见附录 A `ENABLE_PII_REDACTION`）
+- v0.2.0：定时任务清理过期日志（`AUDIT_LOG_RETENTION_DAYS`）
+- v0.3.0：用户自助"我的数据导出/删除"接口（GDPR Art 15/17）
+- v0.3.0：admin 角色分层（support/security/super，super 才能看 body）
+- v0.3.0：DB 静态加密（PG TDE / 磁盘加密）
 
 ---
 
@@ -1269,6 +1333,9 @@ async def forward_stream_request():
 | `JWT_EXPIRE_DAYS` | ❌ | `7` | JWT Token 有效期（天） |
 | `ADMIN_USERNAME` | ❌ | `admin` | 首次启动自动创建的默认管理员用户名 |
 | `ADMIN_PASSWORD` | ❌ | `admin123` | 首次启动自动创建的默认管理员密码，**生产环境必须改** |
+| `AUDIT_LOG_FULL_BODY` | ❌ | `false` | 是否持久化完整 LLM 请求/响应 body（加密）。`true` 时写加密 body；`false` 时只写 `request_body_preview` 前 200 字符。生产环境默认 `false` |
+| `AUDIT_LOG_RETENTION_DAYS` | ❌ | `90` | 审计日志保留天数。超过 N 天的日志由后台任务清理（v0.2.0 实现）。GDPR/PIPL 合规要求"按需最小化保留" |
+| `ENABLE_PII_REDACTION` | ❌ | `false` | 启用 Presidio 自动 PII 脱敏（email/phone/身份证/银行卡/AWS Key 等）。`true` 时写入前自动打码。v0.2.0 实现 |
 
 **安全约束：**
 

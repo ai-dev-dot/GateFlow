@@ -123,8 +123,18 @@ async def test_snapshot_unchanged_after_user_mutation(db_session, test_user):
 
 
 @pytest.mark.asyncio
-async def test_request_body_truncation(db_session, test_user):
-    """Body longer than 100KB gets truncated."""
+async def test_request_body_truncation(db_session, test_user, monkeypatch):
+    """Body longer than 100KB gets truncated to MAX_LOG_CONTENT_LENGTH.
+
+    With AUDIT_LOG_FULL_BODY=true, the truncated body is Fernet-encrypted
+    before storage. Fernet uses base64 + HMAC overhead, so the persisted
+    ciphertext is ~36% larger than plaintext. We assert the semantic
+    invariant instead: the decrypted body equals the truncated plaintext.
+    """
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "AUDIT_LOG_FULL_BODY", True)
+
     service = AuditService(db_session)
     big_body = "x" * (200 * 1024)  # 200KB
     log = await service.create_pending_log(
@@ -136,4 +146,112 @@ async def test_request_body_truncation(db_session, test_user):
         is_stream=False,
     )
     await db_session.commit()
-    assert len(log.request_body) == service.MAX_LOG_CONTENT_LENGTH
+    assert log.request_body != big_body, "encrypted, not plaintext"
+    # Round-trip decrypts back to the truncated (not original) body —
+    # this is the actual contract we care about.
+    decrypted = service.decrypt_request_body(log.request_body)
+    assert decrypted == big_body[: service.MAX_LOG_CONTENT_LENGTH]
+    assert len(decrypted) == service.MAX_LOG_CONTENT_LENGTH
+
+
+@pytest.mark.asyncio
+async def test_preview_is_first_n_chars(db_session, test_user, monkeypatch):
+    """request_body_preview contains the first N characters of the body,
+    in plaintext, regardless of FULL_BODY setting."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    n = settings.AUDIT_LOG_PREVIEW_CHARS
+
+    # FULL_BODY=true
+    monkeypatch.setattr(settings, "AUDIT_LOG_FULL_BODY", True)
+    body = "A" * (n * 3) + "END"
+    service = AuditService(db_session)
+    log = await service.create_pending_log(
+        user=test_user,
+        model="m",
+        provider="p",
+        path="/x",
+        request_body=body,
+        is_stream=False,
+    )
+    await db_session.commit()
+    assert log.request_body_preview == "A" * n
+
+    # FULL_BODY=false
+    monkeypatch.setattr(settings, "AUDIT_LOG_FULL_BODY", False)
+    log2 = await service.create_pending_log(
+        user=test_user,
+        model="m",
+        provider="p",
+        path="/x",
+        request_body=body,
+        is_stream=False,
+    )
+    await db_session.commit()
+    assert log2.request_body_preview == "A" * n
+    assert log2.request_body is None, "FULL_BODY=false must drop encrypted body"
+
+
+@pytest.mark.asyncio
+async def test_record_admin_access_writes_meta_audit(db_session, admin_user, monkeypatch):
+    """When an admin views a log body, a new AuditLog row is created with
+    path='/admin/audit-access' recording the action."""
+    from sqlalchemy import select
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "AUDIT_LOG_FULL_BODY", True)
+
+    # First create a target log as a regular user
+    from app.models.audit import AuditLog
+
+    target = AuditLog(
+        user_id=admin_user.id,  # admin looking at their own log for simplicity
+        username=admin_user.username,
+        department=admin_user.department.name,
+        model="gpt-4",
+        provider="openai",
+        method="POST",
+        path="/v1/chat/completions",
+        request_body_preview="some preview",
+        is_stream=False,
+        status="completed",
+    )
+    db_session.add(target)
+    await db_session.commit()
+    await db_session.refresh(target)
+
+    # Now admin views it (meta-audit)
+    service = AuditService(db_session)
+    meta = await service.record_admin_access(
+        admin_user, target, ip_address="10.0.0.1"
+    )
+    await db_session.commit()
+
+    assert meta.path == "/admin/audit-access"
+    assert meta.user_id == admin_user.id
+    assert meta.status == "completed"
+    assert "target_log_id" in meta.request_body_preview
+    assert str(target.id) in meta.request_body_preview
+    assert meta.ip_address == "10.0.0.1"
+
+
+@pytest.mark.asyncio
+async def test_decrypt_request_body_round_trip(db_session, test_user, monkeypatch):
+    """decrypt_request_body must recover the original plaintext when
+    AUDIT_LOG_FULL_BODY=true."""
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "AUDIT_LOG_FULL_BODY", True)
+    service = AuditService(db_session)
+    body = "the quick brown fox jumps over the lazy dog"
+    log = await service.create_pending_log(
+        user=test_user,
+        model="m",
+        provider="p",
+        path="/x",
+        request_body=body,
+        is_stream=False,
+    )
+    await db_session.commit()
+    assert service.decrypt_request_body(log.request_body) == body

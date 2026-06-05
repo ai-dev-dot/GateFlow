@@ -14,6 +14,15 @@ class Settings(BaseSettings):
     ADMIN_USERNAME: str = "admin"
     ADMIN_PASSWORD: str = "admin123"
 
+    # Audit log data policy (see README "数据存储与隐私" + spec §6.3)
+    # When true, full request/response bodies are encrypted and persisted.
+    # When false, only the first N chars of the request body are stored as
+    # `request_body_preview` (plaintext); full body is dropped at ingest.
+    AUDIT_LOG_FULL_BODY: bool = False
+    AUDIT_LOG_PREVIEW_CHARS: int = 200
+    AUDIT_LOG_RETENTION_DAYS: int = 90
+    ENABLE_PII_REDACTION: bool = False
+
     class Config:
         env_file = ".env"
 
