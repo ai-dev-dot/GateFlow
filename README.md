@@ -82,43 +82,18 @@ api_key  = "gf_your_enterprise_token"        # 闸机发的 Token
 
 ---
 
-## 已实现功能
+## 核心能力
 
-### 统一 API 网关
-- **OpenAI 兼容协议**：`POST /v1/chat/completions`，支持流式（SSE）和非流式
-- **Anthropic 兼容协议**：`POST /v1/messages`
-- **Provider Adapter 模式**：策略模式隔离不同 LLM 提供商协议，新增 provider 只需实现一个 adapter
-- **上游 API Key 池**：按 provider 分组，支持自动故障转移（按可用 key 轮询）
-- **客户端 API Key**：`gf_` 前缀，关联客户端类型（Claude Code、Codex、Cursor 等），可设置速率限制
+- **统一 API 网关**：OpenAI / Anthropic 兼容协议，上游 Key 池自动故障转移
+- **Web AI 对话**：多模型、流式打字机效果、历史会话保存
+- **全量调用审计**：所有 LLM 调用完整记录，事后可追溯
+- **多维度用量统计**：按用户、部门、模型、客户端实时聚合
+- **双模身份认证**：JWT 与 API Key 并存，支持部门和角色
 
-### 身份认证
-- **双模认证**：JWT（Web 端会话）+ API Key（客户端调用），中间件自动识别
-- **用户管理**：增删改查、修改密码
-- **角色管理**：admin / 普通用户
-- **部门管理**：用户归属部门，支持增删
-- **客户端类型管理**：admin 维护 AgentType 字典，关联 API Key
+## 技术栈
 
-### Web 端 AI 对话
-- **多模型对话**：选择模型即可开始对话，对话历史保存
-- **流式打字机效果**：SSE 实时输出，OpenAI 协议
-- **对话管理**：多对话、查看历史、删除
-
-### 审计与用量统计
-- **全量 LLM 调用日志**：记录用户、模型、token、延迟、状态码、IP、UA 等
-- **日志不可变原则**：username、department、api_key_name 都是请求发生时的快照，不被未来编辑污染
-- **审计检索**：按用户、部门、模型、时间范围筛选
-- **用量统计（4 个维度 Tab 切换）**：
-  - **按用户**：谁的用量最多
-  - **按部门**：哪个部门用得最多（按当时所在部门归类）
-  - **按模型**：哪个模型用得最多
-  - **按客户端**：哪个工具用得最多
-- **用量趋势**：按日聚合 token 用量
-- **个人用量看板**：普通用户查看自己的用量
-
-### 前端
-- **React + Ant Design（中文）**：管理后台（用户、API Key、审计、统计、网关配置）
-- **Vite 构建**：开发服务器 + 生产构建
-- **Zustand 状态管理**：auth store 持久化 token
+- **后端**：Python 3.13 · FastAPI · SQLAlchemy (async) · PostgreSQL
+- **前端**：React 18 · TypeScript · Vite · Ant Design
 
 ## 快速开始
 
