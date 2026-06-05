@@ -5,7 +5,6 @@ from app.models.agent_type import AgentType
 from app.models.provider_key import ProviderAPIKey
 from app.models.gateway import ModelConfig
 from app.models.audit import AuditLog
-from app.models.usage import UsageStat
 from app.models.chat import Conversation, Message
 
 __all__ = [
@@ -20,7 +19,6 @@ __all__ = [
     "ProviderAPIKey",
     "ModelConfig",
     "AuditLog",
-    "UsageStat",
     "Conversation",
     "Message",
 ]

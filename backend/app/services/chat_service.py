@@ -1,7 +1,7 @@
 import json
 import logging
 import time
-from datetime import datetime, date
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
@@ -14,7 +14,6 @@ from sqlalchemy.orm import selectinload
 from app.models.audit import AuditLog
 from app.models.chat import Conversation, Message
 from app.models.gateway import ModelConfig
-from app.models.usage import UsageStat
 from app.models.user import User
 from app.services.provider_key_service import ProviderKeyService
 from app.services.provider_adapters import get_adapter
@@ -294,8 +293,6 @@ class ChatService:
                         request_tokens=request_tokens,
                         response_tokens=response_tokens,
                         latency_ms=latency_ms,
-                        user=user,
-                        model_config=model_config,
                     )
                 except Exception as e:
                     logger.error(f"Stream save failed: {e}", exc_info=True)
@@ -342,10 +339,11 @@ class ChatService:
         request_tokens: int,
         response_tokens: int,
         latency_ms: int,
-        user: User,
-        model_config: ModelConfig,
     ) -> None:
-        """Background task: save response, update audit log, provider key stats, and usage stats."""
+        """流结束后保存：AI 消息 + 更新 audit log + 更新 provider key 统计。
+
+        注意：用量统计从 AuditLog 实时聚合，不再单独维护 UsageStat。
+        """
         try:
             from app.database import async_session
 
@@ -390,51 +388,12 @@ class ChatService:
                 else:
                     await key_service.update_key_error(provider_key_id, status_code)
 
-                # Update usage stats
-                today = date.today()
-                total_tokens = request_tokens + response_tokens
-
-                result = await db.execute(
-                    select(UsageStat).where(
-                        UsageStat.user_id == user.id,
-                        UsageStat.model == model_config.model_alias,
-                        UsageStat.date == today,
-                        UsageStat.api_key_id == None,
-                    )
-                )
-                stat = result.scalar_one_or_none()
-
-                if stat:
-                    stat.request_count += 1
-                    stat.input_tokens += request_tokens
-                    stat.output_tokens += response_tokens
-                    stat.total_tokens += total_tokens
-                else:
-                    department = None
-                    if hasattr(user, "department") and user.department:
-                        department = user.department.name
-
-                    stat = UsageStat(
-                        date=today,
-                        user_id=user.id,
-                        model=model_config.model_alias,
-                        department=department,
-                        api_key_id=None,
-                        api_key_name=None,
-                        agent_type=None,
-                        request_count=1,
-                        input_tokens=request_tokens,
-                        output_tokens=response_tokens,
-                        total_tokens=total_tokens,
-                    )
-                    db.add(stat)
-
                 await db.commit()
                 logger.info(
-                    f"Saved streamed response and stats for conversation {conv_id}"
+                    f"Saved streamed response for conversation {conv_id}"
                 )
         except Exception as e:
-            logger.error(f"Failed to save streamed response with stats: {e}", exc_info=True)
+            logger.error(f"Failed to save streamed response: {e}", exc_info=True)
 
     async def delete_conversation(
         self, conversation_id: UUID, user: User

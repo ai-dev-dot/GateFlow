@@ -1,8 +1,7 @@
 import json
 import time
 import logging
-from datetime import datetime, date
-from typing import Optional
+from datetime import datetime
 
 import httpx
 from fastapi import Request
@@ -12,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit import AuditLog
 from app.models.gateway import ModelConfig
-from app.models.usage import UsageStat
 from app.models.user import User
 from app.services.provider_key_service import ProviderKeyService
 from app.services.provider_adapters import get_adapter
@@ -222,10 +220,6 @@ class GatewayService:
                         request_tokens=request_tokens,
                         response_tokens=response_tokens,
                         latency_ms=latency_ms,
-                        user=user,
-                        model_config=model_config,
-                        api_key_id=api_key_id,
-                        agent_type=agent_type,
                     )
                 except Exception as e:
                     logger.error(f"Stream post-update failed: {e}", exc_info=True)
@@ -298,10 +292,6 @@ class GatewayService:
                 request_tokens=request_tokens,
                 response_tokens=response_tokens,
                 latency_ms=latency_ms,
-                user=user,
-                model_config=model_config,
-                api_key_id=api_key_id,
-                agent_type=agent_type,
             )
         except Exception as e:
             logger.error(f"Non-stream post-update failed: {e}", exc_info=True)
@@ -321,12 +311,11 @@ class GatewayService:
         request_tokens: int,
         response_tokens: int,
         latency_ms: int,
-        user: User,
-        model_config: ModelConfig,
-        api_key_id=None,
-        agent_type: str | None = None,
     ) -> None:
-        """Background task: update audit log, provider key stats, and usage stats."""
+        """请求结束后：更新 audit log + provider key 统计。
+
+        注意：用量统计从 AuditLog 实时聚合，不再单独维护 UsageStat。
+        """
         try:
             from app.database import async_session
 
@@ -353,79 +342,8 @@ class GatewayService:
                 else:
                     await key_service.update_key_error(provider_key_id, status_code)
 
-                await self._update_usage_stats(
-                    db=db,
-                    user_id=user.id,
-                    department=getattr(user, "department", None)
-                    and user.department.name
-                    if hasattr(user, "department") and user.department
-                    else None,
-                    model=model_config.model_alias,
-                    request_tokens=request_tokens,
-                    response_tokens=response_tokens,
-                    api_key_id=api_key_id,
-                    agent_type=agent_type,
-                )
-
         except Exception as e:
             logger.error(f"Background update failed: {e}", exc_info=True)
-
-    async def _update_usage_stats(
-        self,
-        db: AsyncSession,
-        user_id,
-        department: Optional[str],
-        model: str,
-        request_tokens: int,
-        response_tokens: int,
-        api_key_id=None,
-        agent_type: str | None = None,
-    ) -> None:
-        """Update daily usage stats for the user/model/api_key combination."""
-        today = date.today()
-        total_tokens = request_tokens + response_tokens
-
-        result = await db.execute(
-            select(UsageStat).where(
-                UsageStat.user_id == user_id,
-                UsageStat.model == model,
-                UsageStat.date == today,
-                UsageStat.api_key_id == api_key_id,
-            )
-        )
-        stat = result.scalar_one_or_none()
-
-        if stat:
-            stat.request_count += 1
-            stat.input_tokens += request_tokens
-            stat.output_tokens += response_tokens
-            stat.total_tokens += total_tokens
-        else:
-            # Resolve api_key_name if we have an api_key_id
-            api_key_name = None
-            if api_key_id:
-                from app.models.api_key import APIKey
-                result = await db.execute(
-                    select(APIKey.name).where(APIKey.id == api_key_id)
-                )
-                api_key_name = result.scalar_one_or_none()
-
-            stat = UsageStat(
-                date=today,
-                user_id=user_id,
-                model=model,
-                department=department,
-                api_key_id=api_key_id,
-                api_key_name=api_key_name,
-                agent_type=agent_type,
-                request_count=1,
-                input_tokens=request_tokens,
-                output_tokens=response_tokens,
-                total_tokens=total_tokens,
-            )
-            db.add(stat)
-
-        await db.commit()
 
     @staticmethod
     def _estimate_request_tokens(request_body: dict) -> int:
