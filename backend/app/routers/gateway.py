@@ -11,7 +11,7 @@ from app.schemas.gateway import (
     ModelConfigUpdate,
     ModelConfigResponse,
 )
-from app.middleware.auth_middleware import require_admin
+from app.middleware.auth_middleware import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/gateway/models", tags=["模型配置管理"])
 
@@ -19,9 +19,9 @@ router = APIRouter(prefix="/api/gateway/models", tags=["模型配置管理"])
 @router.get("", response_model=List[ModelConfigResponse])
 async def list_model_configs(
     db: AsyncSession = Depends(get_db),
-    _admin=Depends(require_admin),
+    _user=Depends(get_current_user),
 ):
-    """列出所有模型配置（管理员）"""
+    """列出所有模型配置（登录用户可用）"""
     result = await db.execute(select(ModelConfig))
     return result.scalars().all()
 

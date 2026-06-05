@@ -53,3 +53,14 @@ export async function createDepartment(data: Partial<Department>): Promise<Depar
   const res = await client.post('/users/departments', data);
   return res.data;
 }
+
+/** 更新部门 */
+export async function updateDepartment(id: string, data: Partial<Department>): Promise<Department> {
+  const res = await client.put(`/users/departments/${id}`, data);
+  return res.data;
+}
+
+/** 删除部门 */
+export async function deleteDepartment(id: string): Promise<void> {
+  await client.delete(`/users/departments/${id}`);
+}

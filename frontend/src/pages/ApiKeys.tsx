@@ -68,13 +68,19 @@ export default function ApiKeys() {
   const handleEdit = (record: APIKey) => {
     setEditing(record);
     setNewKey(null);
-    form.setFieldsValue({
-      name: record.name,
-      permissions: record.permissions,
-      rate_limit: record.rate_limit,
-      is_active: record.is_active,
-    });
     setModalOpen(true);
+  };
+
+  // Modal 打开动画完成后设置表单值
+  const handleAfterOpenChange = (open: boolean) => {
+    if (open && editing) {
+      form.setFieldsValue({
+        name: editing.name,
+        permissions: editing.permissions,
+        rate_limit: editing.rate_limit,
+        is_active: editing.is_active,
+      });
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -259,6 +265,7 @@ export default function ApiKeys() {
           setNewKey(null);
         }}
         destroyOnClose
+        afterOpenChange={handleAfterOpenChange}
         footer={
           newKey
             ? [

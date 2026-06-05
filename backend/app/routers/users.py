@@ -82,6 +82,18 @@ async def create_department(request: DepartmentCreate, db: AsyncSession = Depend
     return department
 
 
+@router.put("/departments/{department_id}", response_model=DepartmentResponse)
+async def update_department(department_id: UUID, request: DepartmentCreate, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
+    result = await db.execute(select(Department).where(Department.id == department_id))
+    department = result.scalar_one_or_none()
+    if not department:
+        raise HTTPException(status_code=404, detail="部门不存在")
+    department.name = request.name
+    department.parent_id = request.parent_id
+    await db.commit()
+    await db.refresh(department)
+    return department
+
 @router.delete("/departments/{department_id}")
 async def delete_department(department_id: UUID, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
     result = await db.execute(select(Department).where(Department.id == department_id))

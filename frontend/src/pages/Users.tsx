@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
+  Tabs,
   Table,
   Button,
   Modal,
@@ -13,6 +14,7 @@ import {
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
+import type { TabsProps } from 'antd';
 import {
   listUsers,
   createUser,
@@ -20,6 +22,9 @@ import {
   deleteUser,
   listRoles,
   listDepartments,
+  createDepartment,
+  updateDepartment,
+  deleteDepartment,
 } from '@/api/users';
 import type { User, Role, Department } from '@/types';
 
@@ -30,7 +35,9 @@ const roleColorMap: Record<string, string> = {
   viewer: 'green',
 };
 
-export default function Users() {
+/* ==================== 用户管理 Tab ==================== */
+
+function UserTab({ departments }: { departments: Department[] }) {
   const [data, setData] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
@@ -38,7 +45,6 @@ export default function Users() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
   const [form] = Form.useForm();
 
   const fetchData = useCallback(async () => {
@@ -54,11 +60,10 @@ export default function Users() {
     }
   }, []);
 
-  const fetchOptions = useCallback(async () => {
+  const fetchRoles = useCallback(async () => {
     try {
-      const [r, d] = await Promise.all([listRoles(), listDepartments()]);
-      setRoles(r);
-      setDepartments(d);
+      const res = await listRoles();
+      setRoles(res);
     } catch {
       // 错误由拦截器处理
     }
@@ -69,8 +74,8 @@ export default function Users() {
   }, [fetchData]);
 
   useEffect(() => {
-    fetchOptions();
-  }, [fetchOptions]);
+    fetchRoles();
+  }, [fetchRoles]);
 
   const handleAdd = () => {
     setEditing(null);
@@ -80,13 +85,18 @@ export default function Users() {
 
   const handleEdit = (record: User) => {
     setEditing(record);
-    form.setFieldsValue({
-      email: record.email,
-      role_id: record.role_id,
-      department_id: record.department_id,
-      is_active: record.is_active,
-    });
     setModalOpen(true);
+  };
+
+  const handleAfterOpenChange = (open: boolean) => {
+    if (open && editing) {
+      form.setFieldsValue({
+        email: editing.email,
+        role_id: editing.role_id,
+        department_id: editing.department_id,
+        is_active: editing.is_active,
+      });
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -194,7 +204,7 @@ export default function Users() {
   ];
 
   return (
-    <div style={{ padding: 24, background: '#fff', borderRadius: 8 }}>
+    <>
       <div style={{ marginBottom: 16 }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
           添加用户
@@ -221,6 +231,7 @@ export default function Users() {
         onOk={handleSubmit}
         onCancel={() => setModalOpen(false)}
         destroyOnClose
+        afterOpenChange={handleAfterOpenChange}
       >
         <Form form={form} layout="vertical" preserve={false}>
           {!editing && (
@@ -287,6 +298,211 @@ export default function Users() {
           )}
         </Form>
       </Modal>
+    </>
+  );
+}
+
+/* ==================== 部门管理 Tab ==================== */
+
+function DepartmentTab({ onRefresh }: { onRefresh: () => void }) {
+  const [data, setData] = useState<Department[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<Department | null>(null);
+  const [form] = Form.useForm();
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await listDepartments();
+      setData(res);
+    } catch {
+      // 错误由拦截器处理
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleAdd = () => {
+    setEditing(null);
+    form.resetFields();
+    setModalOpen(true);
+  };
+
+  const handleEdit = (record: Department) => {
+    setEditing(record);
+    setModalOpen(true);
+  };
+
+  const handleAfterOpenChange = (open: boolean) => {
+    if (open && editing) {
+      form.setFieldsValue({
+        name: editing.name,
+        parent_id: editing.parent_id,
+      });
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteDepartment(id);
+      message.success('已删除');
+      fetchData();
+      onRefresh();
+    } catch {
+      // 错误由拦截器处理
+    }
+  };
+
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      if (editing) {
+        await updateDepartment(editing.id, {
+          name: values.name,
+          parent_id: values.parent_id,
+        });
+        message.success('已更新');
+      } else {
+        await createDepartment({
+          name: values.name,
+          parent_id: values.parent_id,
+        });
+        message.success('已创建');
+      }
+      setModalOpen(false);
+      fetchData();
+      onRefresh();
+    } catch {
+      // 表单校验失败或 API 错误
+    }
+  };
+
+  const columns: ColumnsType<Department> = [
+    {
+      title: '部门名称',
+      dataIndex: 'name',
+      key: 'name',
+    },
+    {
+      title: '上级部门',
+      key: 'parent',
+      render: (_: unknown, record: Department) => {
+        if (!record.parent_id) return '-';
+        const parent = data.find((d) => d.id === record.parent_id);
+        return parent?.name || '-';
+      },
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 120,
+      render: (_: unknown, record: Department) => (
+        <Space size="small">
+          <Button
+            type="link"
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => handleEdit(record)}
+          />
+          <Popconfirm
+            title="确定删除此部门？"
+            onConfirm={() => handleDelete(record.id)}
+            okText="删除"
+            cancelText="取消"
+          >
+            <Button type="link" size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <>
+      <div style={{ marginBottom: 16 }}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+          添加部门
+        </Button>
+      </div>
+
+      <Table
+        rowKey="id"
+        columns={columns}
+        dataSource={data}
+        loading={loading}
+        pagination={false}
+      />
+
+      <Modal
+        title={editing ? '编辑部门' : '添加部门'}
+        open={modalOpen}
+        onOk={handleSubmit}
+        onCancel={() => setModalOpen(false)}
+        destroyOnClose
+        afterOpenChange={handleAfterOpenChange}
+      >
+        <Form form={form} layout="vertical" preserve={false}>
+          <Form.Item
+            name="name"
+            label="部门名称"
+            rules={[{ required: true, message: '请输入部门名称' }]}
+          >
+            <Input placeholder="部门名称" />
+          </Form.Item>
+          <Form.Item name="parent_id" label="上级部门">
+            <Select
+              placeholder="选择上级部门（可选）"
+              allowClear
+              options={data
+                .filter((d) => !editing || d.id !== editing.id)
+                .map((d) => ({ value: d.id, label: d.name }))}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </>
+  );
+}
+
+/* ==================== 主组件 ==================== */
+
+export default function Users() {
+  const [departments, setDepartments] = useState<Department[]>([]);
+
+  const fetchDepartments = useCallback(async () => {
+    try {
+      const res = await listDepartments();
+      setDepartments(res);
+    } catch {
+      // 错误由拦截器处理
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDepartments();
+  }, [fetchDepartments]);
+
+  const tabItems: TabsProps['items'] = [
+    {
+      key: 'users',
+      label: '用户管理',
+      children: <UserTab departments={departments} />,
+    },
+    {
+      key: 'departments',
+      label: '部门管理',
+      children: <DepartmentTab onRefresh={fetchDepartments} />,
+    },
+  ];
+
+  return (
+    <div style={{ padding: 24, background: '#fff', borderRadius: 8 }}>
+      <Tabs defaultActiveKey="users" items={tabItems} />
     </div>
   );
 }

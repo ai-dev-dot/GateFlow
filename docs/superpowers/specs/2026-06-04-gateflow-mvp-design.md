@@ -151,7 +151,7 @@ GateFlow/
 │   │   │   ├── provider_keys.py   # 上游 API Key 管理
 │   │   │   ├── gateway.py         # 网关转发接口
 │   │   │   ├── chat.py            # 问答对话接口
-│   │   │   ├── audit.py           # 审计日志查询
+│   │   │   ├── audit.py           # LLM 调用日志查询
 │   │   │   └── usage.py           # 用量统计
 │   │   ├── services/              # 业务逻辑
 │   │   │   ├── auth_service.py
@@ -178,7 +178,7 @@ GateFlow/
 │   │   │   ├── Dashboard.tsx      # 控制台首页
 │   │   │   ├── Gateway.tsx        # 网关管理
 │   │   │   ├── Users.tsx          # 用户管理
-│   │   │   ├── Audit.tsx          # 审计日志
+│   │   │   ├── Audit.tsx          # LLM 调用日志
 │   │   │   └── Usage.tsx          # 用量统计
 │   │   ├── components/            # 通用组件
 │   │   ├── services/              # API 调用封装
@@ -717,7 +717,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 ---
 
-## 6. 审计日志模块
+## 6. LLM 调用日志模块
 
 ### 6.1 日志记录内容
 
@@ -870,7 +870,7 @@ GET /api/usage/summary?
 | 控制台首页 | `/dashboard` | 用量概览、趋势图 | 所有用户 |
 | 网关管理 | `/gateway` | 模型路由配置、API Key 管理 | admin |
 | 用户管理 | `/users` | 用户增删改查、角色分配 | admin |
-| 审计日志 | `/audit` | 日志列表、详情查看 | admin/user |
+| LLM 调用日志 | `/audit` | LLM 调用记录、详情查看 | admin |
 | 用量统计 | `/usage` | Token 用量统计图表 | 所有用户 |
 
 ### 8.2 AI 问答页设计（豆包风格）
@@ -1010,7 +1010,7 @@ GET /api/usage/summary?
 | `/api/chat/conversations/{id}/messages` | POST | 发送消息（流式响应） |
 | `/api/chat/conversations/{id}` | DELETE | 删除对话 |
 
-### 9.7 审计日志
+### 9.7 LLM 调用日志
 
 | 端点 | 方法 | 说明 |
 |------|------|------|

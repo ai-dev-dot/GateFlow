@@ -16,6 +16,8 @@ class ModelConfigCreate(BaseModel):
 
 
 class ModelConfigUpdate(BaseModel):
+    model_alias: Optional[str] = None
+    provider: Optional[str] = None
     target_model: Optional[str] = None
     target_url: Optional[str] = None
     is_active: Optional[bool] = None

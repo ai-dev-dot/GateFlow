@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-GateFlow（闸机）是企业 AI 网关 —— 所有大模型调用的统一入口，提供访问控制、成本管理、审计日志和协议转换。
+GateFlow（闸机）是企业 AI 网关 —— 所有大模型调用的统一入口，提供访问控制、成本管理、LLM 调用日志和协议转换。
 
 ## 技术栈
 
@@ -113,7 +113,7 @@ Vite 开发模式下 `/api` 和 `/v1` 请求代理到后端 `localhost:8000`。
 - `ProviderAPIKey` — 上游 API Key 池（按 provider 分组，支持智能故障转移）
 - `APIKey` — 客户端 API Key（`gf_` 前缀），关联 `AgentType` 标识客户端类型
 - `AgentType` — 客户端类型枚举（Claude Code、Codex、Cursor 等，管理员维护）
-- `AuditLog` — 请求审计（含 `api_key_id` 和 `agent_type` 用于按工具统计）
+- `AuditLog` — LLM 调用日志（含 `api_key_id` 和 `agent_type` 用于按工具统计）
 
 ### 前端
 
@@ -126,5 +126,5 @@ Vite 开发模式下 `/api` 和 `/v1` 请求代理到后端 `localhost:8000`。
 
 - 默认管理员：`admin` / `admin123`
 - API Key 以 `gf_` 开头，认证中间件通过前缀区分 Key 和 JWT
-- 流式响应是透传模式：网关逐块转发，流结束后异步更新审计日志和用量统计
+- 流式响应是透传模式：网关逐块转发，流结束后异步更新 LLM 调用日志和用量统计
 - `GatewayService` 和 `ChatService` 的流式处理都通过 adapter 解析 SSE，不在 service 层硬编码协议逻辑

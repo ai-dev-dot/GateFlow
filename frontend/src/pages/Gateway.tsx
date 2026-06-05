@@ -71,17 +71,23 @@ function ModelConfigTab() {
 
   const handleEdit = (record: ModelConfig) => {
     setEditing(record);
-    form.setFieldsValue({
-      model_alias: record.model_alias,
-      provider: record.provider,
-      target_model: record.target_model,
-      target_url: record.target_url,
-      is_active: record.is_active,
-      default_max_tokens: record.default_max_tokens,
-      default_temperature: record.default_temperature,
-      priority: record.priority,
-    });
     setModalOpen(true);
+  };
+
+  // Modal 打开动画完成后设置表单值
+  const handleAfterOpenChange = (open: boolean) => {
+    if (open && editing) {
+      form.setFieldsValue({
+        model_alias: editing.model_alias,
+        provider: editing.provider,
+        target_model: editing.target_model,
+        target_url: editing.target_url,
+        is_active: editing.is_active,
+        default_max_tokens: editing.default_max_tokens,
+        default_temperature: editing.default_temperature,
+        priority: editing.priority,
+      });
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -188,6 +194,7 @@ function ModelConfigTab() {
         onOk={handleSubmit}
         onCancel={() => setModalOpen(false)}
         destroyOnClose
+        afterOpenChange={handleAfterOpenChange}
       >
         <Form form={form} layout="vertical" preserve={false}>
           <Form.Item
@@ -289,12 +296,18 @@ function ProviderKeyTab() {
 
   const handleEdit = (record: ProviderKey) => {
     setEditing(record);
-    form.setFieldsValue({
-      name: record.name,
-      is_active: record.is_active,
-      remark: record.remark,
-    });
     setModalOpen(true);
+  };
+
+  // Modal 打开动画完成后设置表单值
+  const handleAfterOpenChange = (open: boolean) => {
+    if (open && editing) {
+      form.setFieldsValue({
+        name: editing.name,
+        is_active: editing.is_active,
+        remark: editing.remark,
+      });
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -438,6 +451,7 @@ function ProviderKeyTab() {
         onOk={handleSubmit}
         onCancel={() => setModalOpen(false)}
         destroyOnClose
+        afterOpenChange={handleAfterOpenChange}
       >
         <Form form={form} layout="vertical" preserve={false}>
           {!editing && (

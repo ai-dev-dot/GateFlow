@@ -1,7 +1,7 @@
 import client from './client';
 import type { AuditLog, PaginatedResponse } from '../types';
 
-/** 审计日志列表 */
+/** LLM 调用日志列表 */
 export async function listAuditLogs(params?: {
   page?: number;
   page_size?: number;
@@ -16,5 +16,5 @@ export async function listAuditLogs(params?: {
   return res.data;
 }
 
-/** 审计日志列表 (别名) */
+/** LLM 调用日志列表 (别名) */
 export const listLogs = listAuditLogs;

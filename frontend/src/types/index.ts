@@ -107,7 +107,7 @@ export interface Message {
 }
 
 // ---------------------
-// 审计日志
+// LLM 调用日志
 // ---------------------
 
 export interface AuditLog {

@@ -50,9 +50,11 @@ async def get_audit_logs(
             {
                 "id": str(log.id),
                 "status": log.status,
-                "timestamp": log.timestamp.isoformat() if log.timestamp else None,
-                "user_id": str(log.user_id),
-                "username": log.username,
+                "created_at": log.timestamp.isoformat() if log.timestamp else None,
+                "user": {
+                    "id": str(log.user_id),
+                    "username": log.username,
+                },
                 "department": log.department,
                 "model": log.model,
                 "provider": log.provider,

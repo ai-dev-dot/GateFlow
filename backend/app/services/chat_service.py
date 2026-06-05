@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import time
+from datetime import datetime, date
 from typing import Optional
 from uuid import UUID
 
@@ -10,8 +12,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.audit import AuditLog
 from app.models.chat import Conversation, Message
 from app.models.gateway import ModelConfig
+from app.models.usage import UsageStat
 from app.models.user import User
 from app.services.provider_key_service import ProviderKeyService
 from app.services.provider_adapters import get_adapter
@@ -183,12 +187,42 @@ class ChatService:
             },
         )
 
+        # Estimate request tokens
+        request_tokens = max(1, len(content) // 3)
+
+        # Create pending audit log
+        audit_log = AuditLog(
+            status="pending",
+            user_id=user.id,
+            username=user.username,
+            department=getattr(user, "department", None)
+            and user.department.name
+            if hasattr(user, "department") and user.department
+            else None,
+            model=model_config.model_alias,
+            provider=model_config.provider,
+            method="POST",
+            path="/api/chat/conversations/{id}/messages/stream",
+            request_body=json.dumps({"content": content}, ensure_ascii=False)[:2000],
+            request_tokens=request_tokens,
+            is_stream=True,
+        )
+        self.db.add(audit_log)
+        await self.db.commit()
+        await self.db.refresh(audit_log)
+
         conv_id = conversation_id
         user_content = content
+        audit_log_id = audit_log.id
+        provider_key_id = provider_key.id
+        start_time = time.monotonic()
 
         async def stream_generator():
             """Yield OpenAI-format SSE chunks, collecting content for DB save."""
             full_content = ""
+            response_tokens = 0
+            input_tokens = 0
+            status_code = 200
             client = await get_http_client()
 
             try:
@@ -199,16 +233,18 @@ class ChatService:
                     json=body,
                     timeout=httpx.Timeout(300.0, read=300.0),
                 ) as upstream_response:
-                    if upstream_response.status_code != 200:
+                    status_code = upstream_response.status_code
+
+                    if status_code != 200:
                         error_body = b""
                         async for chunk in upstream_response.aiter_bytes():
                             error_body += chunk
                         error_text = error_body.decode("utf-8", errors="replace")
                         logger.warning(
-                            f"Upstream error {upstream_response.status_code}: {error_text[:500]}"
+                            f"Upstream error {status_code}: {error_text[:500]}"
                         )
                         yield adapter.error_sse(
-                            f"Upstream returned {upstream_response.status_code}"
+                            f"Upstream returned {status_code}"
                         )
                         return
 
@@ -222,6 +258,10 @@ class ChatService:
                                     event = adapter.parse_stream_event(buffer_lines)
                                     if event:
                                         full_content += event.text
+                                        if event.input_tokens:
+                                            input_tokens = event.input_tokens
+                                        if event.output_tokens:
+                                            response_tokens = event.output_tokens
                                         # Convert to OpenAI SSE for frontend
                                         openai_sse = adapter.to_openai_sse(event)
                                         if openai_sse:
@@ -233,14 +273,29 @@ class ChatService:
             except httpx.ReadTimeout:
                 logger.error("Upstream read timeout during chat stream")
                 yield adapter.error_sse("Upstream read timeout", "timeout")
+                status_code = 504
             except Exception as e:
                 logger.error(f"Chat stream error: {e}")
                 yield adapter.error_sse(str(e), "internal_error")
+                status_code = 500
             finally:
-                if full_content:
-                    asyncio.create_task(
-                        self._save_stream_response(conv_id, user_content, full_content)
+                latency_ms = int((time.monotonic() - start_time) * 1000)
+                # Save response and update stats in background
+                asyncio.create_task(
+                    self._save_stream_response_with_stats(
+                        conv_id=conv_id,
+                        user_content=user_content,
+                        full_content=full_content,
+                        audit_log_id=audit_log_id,
+                        provider_key_id=provider_key_id,
+                        status_code=status_code,
+                        request_tokens=request_tokens,
+                        response_tokens=response_tokens,
+                        latency_ms=latency_ms,
+                        user=user,
+                        model_config=model_config,
                     )
+                )
 
         return StreamingResponse(
             stream_generator(),
@@ -273,38 +328,110 @@ class ChatService:
             },
         )
 
-    async def _save_stream_response(
+    async def _save_stream_response_with_stats(
         self,
-        conversation_id: UUID,
+        conv_id: UUID,
         user_content: str,
-        ai_content: str,
+        full_content: str,
+        audit_log_id,
+        provider_key_id,
+        status_code: int,
+        request_tokens: int,
+        response_tokens: int,
+        latency_ms: int,
+        user: User,
+        model_config: ModelConfig,
     ) -> None:
-        """Background task: save the streamed AI response to the database."""
+        """Background task: save response, update audit log, provider key stats, and usage stats."""
         try:
             from app.database import async_session
 
             async with async_session() as db:
-                ai_message = Message(
-                    conversation_id=conversation_id,
-                    role="assistant",
-                    content=ai_content,
-                    tokens=max(1, len(ai_content) // 3),
+                # Save AI message
+                if full_content:
+                    ai_message = Message(
+                        conversation_id=conv_id,
+                        role="assistant",
+                        content=full_content,
+                        tokens=max(1, len(full_content) // 3),
+                    )
+                    db.add(ai_message)
+
+                    result = await db.execute(
+                        select(Conversation).where(Conversation.id == conv_id)
+                    )
+                    conversation = result.scalar_one_or_none()
+                    if conversation and not conversation.title and user_content:
+                        conversation.title = user_content[:50]
+
+                # Update audit log
+                result = await db.execute(
+                    select(AuditLog).where(AuditLog.id == audit_log_id)
                 )
-                db.add(ai_message)
+                audit_log = result.scalar_one_or_none()
+                if audit_log:
+                    audit_log.status = "completed" if status_code == 200 else "failed"
+                    audit_log.status_code = status_code
+                    audit_log.request_tokens = request_tokens
+                    audit_log.response_tokens = response_tokens
+                    audit_log.total_tokens = request_tokens + response_tokens
+                    audit_log.latency_ms = latency_ms
+                    audit_log.completed_at = datetime.utcnow()
+
+                # Update provider key stats
+                key_service = ProviderKeyService(db)
+                if status_code == 200:
+                    await key_service.update_key_success(
+                        provider_key_id, request_tokens, response_tokens
+                    )
+                else:
+                    await key_service.update_key_error(provider_key_id, status_code)
+
+                # Update usage stats
+                today = date.today()
+                total_tokens = request_tokens + response_tokens
 
                 result = await db.execute(
-                    select(Conversation).where(Conversation.id == conversation_id)
+                    select(UsageStat).where(
+                        UsageStat.user_id == user.id,
+                        UsageStat.model == model_config.model_alias,
+                        UsageStat.date == today,
+                        UsageStat.api_key_id == None,
+                    )
                 )
-                conversation = result.scalar_one_or_none()
-                if conversation and not conversation.title and user_content:
-                    conversation.title = user_content[:50]
+                stat = result.scalar_one_or_none()
+
+                if stat:
+                    stat.request_count += 1
+                    stat.input_tokens += request_tokens
+                    stat.output_tokens += response_tokens
+                    stat.total_tokens += total_tokens
+                else:
+                    department = None
+                    if hasattr(user, "department") and user.department:
+                        department = user.department.name
+
+                    stat = UsageStat(
+                        date=today,
+                        user_id=user.id,
+                        model=model_config.model_alias,
+                        department=department,
+                        api_key_id=None,
+                        api_key_name=None,
+                        agent_type=None,
+                        request_count=1,
+                        input_tokens=request_tokens,
+                        output_tokens=response_tokens,
+                        total_tokens=total_tokens,
+                    )
+                    db.add(stat)
 
                 await db.commit()
                 logger.info(
-                    f"Saved streamed response for conversation {conversation_id}"
+                    f"Saved streamed response and stats for conversation {conv_id}"
                 )
         except Exception as e:
-            logger.error(f"Failed to save streamed response: {e}", exc_info=True)
+            logger.error(f"Failed to save streamed response with stats: {e}", exc_info=True)
 
     async def delete_conversation(
         self, conversation_id: UUID, user: User
