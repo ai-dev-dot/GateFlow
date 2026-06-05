@@ -134,6 +134,7 @@ export interface AuditLog {
 
 export interface UsageSummaryItem {
   dimension: string;
+  username?: string | null;  // 仅 dimension=user 时返回
   request_count: number;
   input_tokens: number;
   output_tokens: number;

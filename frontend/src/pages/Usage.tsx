@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Card, Col, Row, Select, DatePicker, Spin, Empty } from 'antd';
+import { Card, Col, Row, Tabs, DatePicker, Spin, Empty } from 'antd';
 import ReactECharts from 'echarts-for-react';
 import dayjs from 'dayjs';
 import { getSummary } from '../api/usage';
@@ -9,12 +9,17 @@ const { RangePicker } = DatePicker;
 
 type Dimension = 'model' | 'department' | 'user' | 'api_key';
 
-const dimensionOptions = [
-  { value: 'model', label: '模型' },
-  { value: 'department', label: '部门' },
-  { value: 'user', label: '用户' },
-  { value: 'api_key', label: '客户端' },
+const tabItems: { key: Dimension; label: string }[] = [
+  { key: 'model', label: '模型' },
+  { key: 'department', label: '部门' },
+  { key: 'user', label: '用户' },
+  { key: 'api_key', label: '客户端' },
 ];
+
+/** 取展示名：用户维度优先用 username，其他维度直接用 dimension */
+function displayName(item: UsageSummaryItem): string {
+  return item.username || item.dimension || '未知';
+}
 
 /** 格式化大数字：1.2M / 3.5K */
 function fmtNum(v: number): string {
@@ -64,7 +69,7 @@ export default function Usage() {
     grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
     xAxis: {
       type: 'category' as const,
-      data: items.map((i) => i.dimension || '未知'),
+      data: items.map(displayName),
       axisLabel: { rotate: items.length > 8 ? 30 : 0 },
     },
     yAxis: {
@@ -113,7 +118,7 @@ export default function Usage() {
         },
         labelLine: { show: false },
         data: items.map((i) => ({
-          name: i.dimension || '未知',
+          name: displayName(i),
           value: i.request_count,
         })),
       },
@@ -124,17 +129,11 @@ export default function Usage() {
 
   return (
     <Spin spinning={loading}>
-      {/* 筛选栏 */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col>
-          <Select<Dimension>
-            value={dimension}
-            onChange={setDimension}
-            options={dimensionOptions}
-            style={{ width: 120 }}
-          />
-        </Col>
-        <Col>
+      {/* Tab 切换 + 日期筛选 */}
+      <Tabs
+        activeKey={dimension}
+        onChange={(k) => setDimension(k as Dimension)}
+        tabBarExtraContent={
           <RangePicker
             value={dateRange ?? undefined}
             onChange={(dates) =>
@@ -142,8 +141,9 @@ export default function Usage() {
             }
             allowClear
           />
-        </Col>
-      </Row>
+        }
+        items={tabItems}
+      />
 
       {/* 图表 */}
       <Row gutter={[16, 16]}>

@@ -2,10 +2,11 @@ from datetime import date
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, null
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.usage import UsageStat
+from app.models.user import User
 
 
 class UsageService:
@@ -84,18 +85,21 @@ class UsageService:
             query = (
                 select(
                     UsageStat.user_id,
+                    User.username.label("username"),
                     func.sum(UsageStat.request_count).label("request_count"),
                     func.sum(UsageStat.input_tokens).label("input_tokens"),
                     func.sum(UsageStat.output_tokens).label("output_tokens"),
                     func.sum(UsageStat.total_tokens).label("total_tokens"),
                 )
+                .join(User, User.id == UsageStat.user_id)
                 .where(*filters)
-                .group_by(UsageStat.user_id)
+                .group_by(UsageStat.user_id, User.username)
             )
         elif dimension == "department":
             query = (
                 select(
                     UsageStat.department,
+                    null().label("username"),
                     func.sum(UsageStat.request_count).label("request_count"),
                     func.sum(UsageStat.input_tokens).label("input_tokens"),
                     func.sum(UsageStat.output_tokens).label("output_tokens"),
@@ -108,6 +112,7 @@ class UsageService:
             query = (
                 select(
                     UsageStat.model,
+                    null().label("username"),
                     func.sum(UsageStat.request_count).label("request_count"),
                     func.sum(UsageStat.input_tokens).label("input_tokens"),
                     func.sum(UsageStat.output_tokens).label("output_tokens"),
@@ -120,6 +125,7 @@ class UsageService:
             query = (
                 select(
                     UsageStat.api_key_name,
+                    null().label("username"),
                     func.sum(UsageStat.request_count).label("request_count"),
                     func.sum(UsageStat.input_tokens).label("input_tokens"),
                     func.sum(UsageStat.output_tokens).label("output_tokens"),
@@ -137,11 +143,12 @@ class UsageService:
 
         return [
             {
-                "dimension": row[0] or "未知",
-                "request_count": row[1],
-                "input_tokens": row[2],
-                "output_tokens": row[3],
-                "total_tokens": row[4],
+                "dimension": str(row[0]) if row[0] is not None else "未知",
+                "username": row[1],
+                "request_count": row[2],
+                "input_tokens": row[3],
+                "output_tokens": row[4],
+                "total_tokens": row[5],
             }
             for row in rows
         ]
