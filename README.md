@@ -97,7 +97,7 @@ api_key  = "gf_your_enterprise_token"        # 闸机发的 Token
 | 存储内容 | 加密 | 谁能看到 |
 |----------|------|----------|
 | 调用 metadata（模型/tokens/耗时/用户/部门/IP） | 否 | 用户自己（自己的日志）+ admin（全量） |
-| Prompt 前 200 字符预览 | 否 | 同上（用于 debug 时快速看上下文） |
+| Prompt 短预览（≤80 字符完整；超长 head40...tail37 截断） | 否 | 同上（用于 debug 时快速看上下文） |
 | 完整 Prompt 全文 | **Fernet 加密** | **只有 admin 显式带 `?include_body=true` 才返**，且每次访问写 meta-audit |
 | 完整 Response 全文 | **Fernet 加密** | 同上 |
 
@@ -107,11 +107,19 @@ api_key  = "gf_your_enterprise_token"        # 闸机发的 Token
 
 **配置开关**（`.env`）：
 
-| 变量 | 默认 | 说明 |
-|------|------|------|
-| `AUDIT_LOG_FULL_BODY` | `false` | `true` 时写加密 body，`false` 时只写前 200 字符预览 |
-| `AUDIT_LOG_RETENTION_DAYS` | `90` | 日志保留天数（v0.2.0 实现自动清理） |
-| `ENABLE_PII_REDACTION` | `false` | 启用 Presidio 自动 PII 脱敏（v0.2.0） |
+| 变量 | 必填 | 默认 | 说明 |
+|------|------|------|------|
+| `DATABASE_URL` | ✅ | — | PostgreSQL 异步连接串 |
+| `JWT_SECRET_KEY` | ✅ | — | JWT 签名密钥。**至少 32 字符**，启动时检测占位符（`change-me` / `your-` / `replace` / `placeholder` 等关键词即 fail-fast） |
+| `ENCRYPTION_KEY` | ✅ | — | Fernet 格式（44 字节 base64），加密上游 API Key 与审计日志 body |
+| `HMAC_SECRET` | ✅ | — | 至少 32 字节随机串，HMAC-SHA256 哈希客户端 API Key |
+| `ALLOWED_ORIGINS` | ❌ | `http://localhost:3000` | CORS 白名单，逗号分隔多个 origin |
+| `DB_POOL_SIZE` | ❌ | `20` | SQLAlchemy 连接池大小 |
+| `DB_MAX_OVERFLOW` | ❌ | `20` | 超出 pool_size 后的最大溢出 |
+| `DB_POOL_RECYCLE_SECONDS` | ❌ | `1800` | 连接回收间隔，防止被 PG idle-timeout 杀掉 |
+| `AUDIT_LOG_FULL_BODY` | ❌ | `false` | `true` 时写加密 body；`false` 时只写 80 字符 preview |
+| `AUDIT_LOG_RETENTION_DAYS` | ❌ | `90` | 日志保留天数（v0.2.0 实现自动清理） |
+| `ENABLE_PII_REDACTION` | ❌ | `false` | 启用 Presidio 自动 PII 脱敏（v0.2.0） |
 
 **API Key 与上游 Key**：以 Fernet 加密（上游 Key）+ HMAC 哈希（API Key）形式存储，**任何 list 接口都不返回明文**。完整 Key 仅在创建时一次性返回。
 

@@ -21,6 +21,7 @@ GateFlow（闸机）是企业 AI 网关 —— 所有大模型调用的统一入
 | httpx | 0.28.1 | 异步 HTTP 客户端（转发请求到上游 LLM） |
 | python-jose[cryptography] | 3.5.0 | JWT 签发/验证 |
 | passlib[bcrypt] + bcrypt | 1.7.4 / 4.0.1 | 密码哈希 |
+| cryptography | (最新) | Fernet 对称加密（上游 API Key、审计日志 body）+ HMAC-SHA256（API Key 哈希） |
 | Alembic | 1.18.4 | 数据库迁移（尚未启用） |
 
 ### 前端（Node.js 24，TypeScript 5.6）
@@ -102,7 +103,7 @@ Vite 开发模式下 `/api` 和 `/v1` 请求代理到后端 `localhost:8000`。
   → Adapter.build_upstream_url/headers/body  # 协议适配
   → httpx.stream/post 转发到上游
   → Adapter.parse_stream_event/extract_response  # 解析 token 用量
-  → 后台任务更新 AuditLog + UsageStat
+  → 后台任务更新 AuditLog（request_body 加密 / preview 明文，meta-audit 记录 admin body 访问）
 ```
 
 ### 模型层
@@ -110,10 +111,10 @@ Vite 开发模式下 `/api` 和 `/v1` 请求代理到后端 `localhost:8000`。
 所有模型使用 UUID 主键 + `TimestampMixin`（`created_at`/`updated_at`）。核心模型：
 
 - `ModelConfig` — 模型路由表（alias → provider + target_model + target_url）
-- `ProviderAPIKey` — 上游 API Key 池（按 provider 分组，支持智能故障转移）
-- `APIKey` — 客户端 API Key（`gf_` 前缀），关联 `AgentType` 标识客户端类型
+- `ProviderAPIKey` — 上游 API Key 池（按 provider 分组，支持智能故障转移）。`key` 字段以 Fernet 加密落库（`encrypted_key` + `key_preview`），解密通过 `get_decrypted_key()`
+- `APIKey` — 客户端 API Key（`gf_` 前缀），关联 `AgentType` 标识客户端类型。`key` 字段以 HMAC-SHA256 哈希落库（`key_hash` + `key_prefix`）
 - `AgentType` — 客户端类型枚举（Claude Code、Codex、Cursor 等，管理员维护）
-- `AuditLog` — LLM 调用日志（含 `api_key_id` 和 `agent_type` 用于按工具统计）
+- `AuditLog` — LLM 调用日志（含 `api_key_id`、`agent_type` 用于按工具统计；`request_body` Fernet 加密 + `request_body_preview` 明文短预览）
 
 ### 前端
 
@@ -128,3 +129,7 @@ Vite 开发模式下 `/api` 和 `/v1` 请求代理到后端 `localhost:8000`。
 - API Key 以 `gf_` 开头，认证中间件通过前缀区分 Key 和 JWT
 - 流式响应是透传模式：网关逐块转发，流结束后异步更新 LLM 调用日志和用量统计
 - `GatewayService` 和 `ChatService` 的流式处理都通过 adapter 解析 SSE，不在 service 层硬编码协议逻辑
+- **启动 fail-fast**：`utils/startup_checks.py` 在 lifespan 第一行执行；JWT 占位符 / Fernet / HMAC 配置错误时直接退出，配置错绝不"带病启动"
+- **API Key 创建**：`POST /api/api-keys` 返回 `APIKeyCreated`（含完整明文，**只此一次**）；`GET /api/api-keys` 只返 `key_prefix`（11 字符）— 不要在 list 端点尝试读完整 key
+- **审计日志 body**：`GET /api/audit/logs` 永远不含 body；`GET /api/audit/logs/{id}` 默认不含；`?include_body=true` 仅 admin 可用，且每次访问写 meta-audit（路径 `/admin/audit-access`）
+- **CORS**：`ALLOWED_ORIGINS` 环境变量（逗号分隔）控制，生产环境必须改为真实域名
