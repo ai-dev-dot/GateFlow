@@ -21,10 +21,19 @@ async def create_user(request: UserCreate, db: AsyncSession = Depends(get_db), a
     result = await db.execute(select(User).where(User.username == request.username))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="用户名已存在")
+    role_id = request.role_id
+    if not role_id:
+        result = await db.execute(select(Role).where(Role.name == "user"))
+        user_role = result.scalar_one_or_none()
+        if not user_role:
+            user_role = Role(name="user", permissions={})
+            db.add(user_role)
+            await db.flush()
+        role_id = user_role.id
     user = User(
         username=request.username, email=request.email,
         hashed_password=get_password_hash(request.password),
-        department_id=request.department_id, role_id=request.role_id
+        department_id=request.department_id, role_id=role_id
     )
     db.add(user)
     await db.commit()
@@ -71,3 +80,14 @@ async def create_department(request: DepartmentCreate, db: AsyncSession = Depend
     await db.commit()
     await db.refresh(department)
     return department
+
+
+@router.delete("/departments/{department_id}")
+async def delete_department(department_id: UUID, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
+    result = await db.execute(select(Department).where(Department.id == department_id))
+    department = result.scalar_one_or_none()
+    if not department:
+        raise HTTPException(status_code=404, detail="部门不存在")
+    await db.delete(department)
+    await db.commit()
+    return {"message": "部门已删除"}

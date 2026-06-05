@@ -34,6 +34,7 @@ async def create_api_key(
         permissions=request.permissions,
         rate_limit=request.rate_limit,
         expires_at=request.expires_at,
+        agent_type_id=request.agent_type_id,
     )
     db.add(api_key)
     await db.commit()

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, List
+from typing import Any, Optional, List
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -27,7 +27,7 @@ class RoleResponse(BaseModel):
 
     id: UUID
     name: str
-    permissions: Optional[List[str]] = None
+    permissions: Optional[Any] = None
 
 
 # --- User ---
@@ -37,7 +37,7 @@ class UserCreate(BaseModel):
     email: str
     password: str
     department_id: Optional[UUID] = None
-    role_id: UUID
+    role_id: Optional[UUID] = None
 
 
 class UserUpdate(BaseModel):
