@@ -103,30 +103,55 @@ api_key  = "gf_your_enterprise_token"        # 闸机发的 Token
 - Node.js 20+
 - PostgreSQL 14+（运行中）
 
-### 1. 克隆并配置
+---
+
+### macOS / Linux
 
 ```bash
+# 1. 克隆并配置
 git clone https://github.com/ai-dev-dot/GateFlow.git
 cd GateFlow
 cp backend/.env.example backend/.env
 # 编辑 backend/.env，至少需要填 DATABASE_URL 和 JWT_SECRET_KEY
+
+# 2. 安装依赖（仅首次）
+bash setup.sh
+
+# 3. 启动服务
+bash start.sh
 ```
 
-### 2. 安装依赖
+### Windows
+
+两种方式任选其一：
+
+**方式 A：Git Bash（推荐，命令与 macOS/Linux 一致）**
 
 ```bash
-bash setup.sh    # Linux/Mac
-# Windows: 双击 setup.bat
+# 在 Git Bash 终端运行
+git clone https://github.com/ai-dev-dot/GateFlow.git
+cd GateFlow
+cp backend/.env.example backend/.env
+# 用记事本/VSCode 编辑 backend/.env
+
+bash setup.sh
+bash start.sh
 ```
 
-`setup.sh` 会自动创建 Python 虚拟环境并安装后端、前端依赖。仅首次运行需要。
+**方式 B：cmd.exe + .bat 脚本**
 
-### 3. 启动服务
+```cmd
+REM 在 cmd.exe 中运行
+git clone https://github.com/ai-dev-dot/GateFlow.git
+cd GateFlow
+copy backend\.env.example backend\.env
+REM 编辑 backend\.env
 
-```bash
-bash start.sh    # Linux/Mac
-# Windows: 双击 start.bat
+setup.bat
+start.bat
 ```
+
+---
 
 启动后访问：
 
