@@ -31,6 +31,7 @@ class AuditLog(Base):
     api_key_id = Column(
         UUID(as_uuid=True), ForeignKey("api_keys.id"), nullable=True
     )
+    api_key_name = Column(String(100), nullable=True)  # 快照：请求发生时 client key 的 name
     agent_type = Column(String(50), nullable=True)
     model = Column(String(100), nullable=False)
     provider = Column(String(50), nullable=True)

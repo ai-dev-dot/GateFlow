@@ -461,6 +461,8 @@ class AuditLog(Base):
     username = Column(String(50), nullable=False)
     department = Column(String(100), nullable=True)
     api_key_id = Column(UUID(as_uuid=True), ForeignKey("api_keys.id"), nullable=True)
+    api_key_name = Column(String(100), nullable=True)  # 快照：请求发生时 client key 的 name
+    agent_type = Column(String(50), nullable=True)
     model = Column(String(100), nullable=False)
     provider = Column(String(50), nullable=True)
     method = Column(String(10), nullable=False)
@@ -2166,14 +2168,17 @@ from sqlalchemy import select, func, null
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit import AuditLog
-from app.models.user import User, Department
 
 
 class UsageService:
     """用量统计服务：从 AuditLog 实时 GROUP BY 聚合。
 
-    department / user 维度 JOIN users / departments，
-    保证反映的是用户当前的部门和用户名（admin 改部门、删部门后立即跟随）。
+    严格遵循"日志即真相"原则：所有聚合维度（username / department /
+    api_key_name）都用 audit_logs 表上的快照字段，不再 JOIN users /
+    departments / api_keys。这样：
+    - 用户改名后，历史统计仍按当时的 username
+    - 员工换部门后，原部门的历史统计不变
+    - API Key 重命名后，历史统计仍按当时的 key name
     """
 
     def __init__(self, db: AsyncSession):
@@ -2199,34 +2204,32 @@ class UsageService:
             filters.append(AuditLog.timestamp < datetime.combine(end_date, time.max))
 
         if dimension == "user":
+            # 快照：直接用 audit_logs.username
             query = (
                 select(
-                    AuditLog.user_id,
-                    User.username.label("username"),
+                    AuditLog.user_id.label("dimension"),
+                    AuditLog.username.label("username"),
                     func.count().label("request_count"),
                     func.coalesce(func.sum(AuditLog.request_tokens), 0).label("input_tokens"),
                     func.coalesce(func.sum(AuditLog.response_tokens), 0).label("output_tokens"),
                     func.coalesce(func.sum(AuditLog.total_tokens), 0).label("total_tokens"),
                 )
-                .join(User, User.id == AuditLog.user_id)
                 .where(*filters)
-                .group_by(AuditLog.user_id, User.username)
+                .group_by(AuditLog.user_id, AuditLog.username)
             )
         elif dimension == "department":
-            # LEFT JOIN Department：用户无部门时 name 为 NULL，前端显示 "未知"
+            # 快照：直接用 audit_logs.department
             query = (
                 select(
-                    Department.name.label("dimension"),
+                    AuditLog.department.label("dimension"),
                     null().label("username"),
                     func.count().label("request_count"),
                     func.coalesce(func.sum(AuditLog.request_tokens), 0).label("input_tokens"),
                     func.coalesce(func.sum(AuditLog.response_tokens), 0).label("output_tokens"),
                     func.coalesce(func.sum(AuditLog.total_tokens), 0).label("total_tokens"),
                 )
-                .join(User, User.id == AuditLog.user_id)
-                .outerjoin(Department, Department.id == User.department_id)
                 .where(*filters)
-                .group_by(Department.name)
+                .group_by(AuditLog.department)
             )
         elif dimension == "model":
             query = (
@@ -2242,6 +2245,7 @@ class UsageService:
                 .group_by(AuditLog.model)
             )
         elif dimension == "api_key":
+            # 快照：直接用 audit_logs.api_key_name
             query = (
                 select(
                     AuditLog.api_key_name.label("dimension"),

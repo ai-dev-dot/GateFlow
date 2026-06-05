@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit import AuditLog
+from app.models.api_key import APIKey
 from app.models.gateway import ModelConfig
 from app.models.user import User
 from app.services.provider_key_service import ProviderKeyService
@@ -65,15 +66,19 @@ class GatewayService:
         # Extract request token count from the request body (best effort)
         request_tokens = self._estimate_request_tokens(request_body)
 
+        # 快照：client api key 的 name（请求发生时的状态，之后不改）
+        api_key_name = None
+        if api_key_id:
+            api_key_name = await self.db.scalar(
+                select(APIKey.name).where(APIKey.id == api_key_id)
+            )
+
         # Create pending audit log
         audit_log = AuditLog(
             status="pending",
             user_id=user.id,
             username=user.username,
-            department=getattr(user, "department", None)
-            and user.department.name
-            if hasattr(user, "department") and user.department
-            else None,
+            department=user.department.name if user.department else None,
             model=request_body.get("model", model_config.model_alias),
             provider=model_config.provider,
             method="POST",
@@ -84,6 +89,7 @@ class GatewayService:
             ip_address=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent", "")[:500],
             api_key_id=api_key_id,
+            api_key_name=api_key_name,
             agent_type=agent_type,
         )
         self.db.add(audit_log)

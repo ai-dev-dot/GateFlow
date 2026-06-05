@@ -723,6 +723,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 | username | string | 用户名 |
 | department | string | 部门名 |
 | api_key_id | UUID | 使用的 API Key ID（可选） |
+| api_key_name | string | API Key 名称（**快照**，请求发生时记录，不随 Key 重命名变化） |
 | agent_type | string | 客户端类型（枚举值，如"Claude Code"、"Codex"，v0.2.0 新增） |
 | model | string | 请求的模型 |
 | provider | string | 提供商 |
@@ -787,7 +788,7 @@ GET /api/audit/logs?
 
 ## 7. 用量统计模块
 
-### 7.1 架构原则：单数据源
+### 7.1 架构原则：单数据源 + 日志即真相
 
 用量统计**不再单独维护聚合表**，而是直接从 `AuditLog` 实时 `GROUP BY` 聚合。
 
@@ -797,10 +798,20 @@ GET /api/audit/logs?
 - MVP 阶段调用量不大，`AuditLog` 实时聚合的性能完全够用
 - 避免双写一致性问题（写 AuditLog 成功 + 写 UsageStat 失败的窗口期）
 
+**日志不可变原则：**
+- 审计日志创建后只追加 status_code / token / latency 字段（响应结果），其他字段永不更新
+- 所有聚合维度（username / department / api_key_name）都是**请求发生时的快照**，不再 JOIN `users` / `departments` / `api_keys` 实时表
+- 含义：
+  - 用户改名为 `zhangsan` 后，老的日志仍记 `lisi`
+  - 员工从「测试部」换到「AI 机器人部」后，老的日志仍归到「测试部」
+  - API Key 改名后，老的日志仍记原名
+- 这才是"统计历史"应有的语义 —— 当时的快照，不被未来编辑污染
+
 **特殊处理：**
-- `dimension=user` 维度：JOIN `users.username`，显示真实用户名（不显示 UUID）
-- `dimension=department` 维度：JOIN `users` + `departments`，**反映用户的当前部门**（admin 把人挪到新部门后，stats 立即跟随）
-- 用户无部门时 `Department.name` 为 NULL，前端显示为"未知"
+- `dimension=user`：直接用 `AuditLog.username`（快照）
+- `dimension=department`：直接用 `AuditLog.department`（快照，可能为 NULL）
+- `dimension=api_key`：直接用 `AuditLog.api_key_name`（快照，可能为 NULL）
+- 任何维度下快照为 NULL 时，前端显示为"未知"
 - 排除 `status_code IS NULL` 的 pending 日志，只统计已完成的调用
 
 ### 7.2 统计维度
@@ -810,9 +821,9 @@ MVP 阶段只统计 Token 用量和各维度占比，金额计算列入后续版
 **统计维度：**
 - Token 用量（输入/输出分开统计）
 - 模型占比（哪个模型用得最多）
-- 用户占比（谁用得最多，显示真实用户名）
-- 部门占比（哪个部门用得最多，**反映当前部门结构**）
-- API Key 占比（哪个工具用得最多）—— 通过 `api_key_id` 关联，每个 Key 可标记用途（如"Claude Code"、"Codex"、"Cursor"）
+- 用户占比（谁用得最多，显示**当时**的用户名）
+- 部门占比（哪个部门用得最多，**历史按当时所在部门归类**）
+- API Key 占比（哪个工具用得最多）—— 按 api_key_name（**当时**的名字）聚合
 - 请求次数统计
 
 ### 7.3 统计 API
@@ -824,7 +835,7 @@ GET /api/usage/summary?
     &end_date=YYYY-MM-DD
 
 GET /api/usage/summary?
-    dimension=department  # 按部门统计（JOIN 当前部门）
+    dimension=department  # 按部门统计（按 audit_logs.department 快照聚合）
     &start_date=...
     &end_date=...
 

@@ -193,10 +193,7 @@ class ChatService:
             status="pending",
             user_id=user.id,
             username=user.username,
-            department=getattr(user, "department", None)
-            and user.department.name
-            if hasattr(user, "department") and user.department
-            else None,
+            department=user.department.name if user.department else None,
             model=model_config.model_alias,
             provider=model_config.provider,
             method="POST",
