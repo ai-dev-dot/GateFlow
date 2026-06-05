@@ -42,7 +42,9 @@ async def get_current_user(
         await db.commit()
 
         result = await db.execute(
-            select(User).where(User.id == api_key.user_id).options(selectinload(User.role))
+            select(User)
+            .where(User.id == api_key.user_id)
+            .options(selectinload(User.role), selectinload(User.department))
         )
         user = result.scalar_one_or_none()
     else:
@@ -56,7 +58,9 @@ async def get_current_user(
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="无效的 Token")
 
         result = await db.execute(
-            select(User).where(User.id == user_id).options(selectinload(User.role))
+            select(User)
+            .where(User.id == user_id)
+            .options(selectinload(User.role), selectinload(User.department))
         )
         user = result.scalar_one_or_none()
 
@@ -115,7 +119,9 @@ async def get_auth_context(
             agent_type = api_key.agent_type.name
 
         result = await db.execute(
-            select(User).where(User.id == api_key.user_id).options(selectinload(User.role))
+            select(User)
+            .where(User.id == api_key.user_id)
+            .options(selectinload(User.role), selectinload(User.department))
         )
         user = result.scalar_one_or_none()
     else:
@@ -128,7 +134,9 @@ async def get_auth_context(
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="无效的 Token")
 
         result = await db.execute(
-            select(User).where(User.id == user_id).options(selectinload(User.role))
+            select(User)
+            .where(User.id == user_id)
+            .options(selectinload(User.role), selectinload(User.department))
         )
         user = result.scalar_one_or_none()
 

@@ -1,4 +1,3 @@
-import asyncio
 import json
 import time
 import logging
@@ -212,8 +211,11 @@ class GatewayService:
                 status_code = 500
             finally:
                 latency_ms = int((time.monotonic() - start_time) * 1000)
-                asyncio.create_task(
-                    self._update_after_response(
+                # 必须 await 而非 create_task：admin 可能在请求刚结束时立即
+                # 查询审计日志/用量统计。create_task 尚未落库即返回，会出现
+                # "上一笔请求的统计看不到"的现象。
+                try:
+                    await self._update_after_response(
                         audit_log_id=audit_log_id,
                         provider_key_id=provider_key_id,
                         status_code=status_code,
@@ -225,7 +227,8 @@ class GatewayService:
                         api_key_id=api_key_id,
                         agent_type=agent_type,
                     )
-                )
+                except Exception as e:
+                    logger.error(f"Stream post-update failed: {e}", exc_info=True)
 
         return StreamingResponse(
             stream_generator(),
@@ -285,8 +288,10 @@ class GatewayService:
 
         latency_ms = int((time.monotonic() - start_time) * 1000)
 
-        asyncio.create_task(
-            self._update_after_response(
+        # 必须 await 而非 create_task：保证审计日志/用量统计在响应返回前
+        # 完成更新，避免 admin 立即查询看不到刚发起的请求的统计。
+        try:
+            await self._update_after_response(
                 audit_log_id=audit_log_id,
                 provider_key_id=provider_key_id,
                 status_code=status_code,
@@ -298,7 +303,8 @@ class GatewayService:
                 api_key_id=api_key_id,
                 agent_type=agent_type,
             )
-        )
+        except Exception as e:
+            logger.error(f"Non-stream post-update failed: {e}", exc_info=True)
 
         if status_code != 200:
             from fastapi.responses import JSONResponse

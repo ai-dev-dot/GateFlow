@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import time
@@ -280,9 +279,12 @@ class ChatService:
                 status_code = 500
             finally:
                 latency_ms = int((time.monotonic() - start_time) * 1000)
-                # Save response and update stats in background
-                asyncio.create_task(
-                    self._save_stream_response_with_stats(
+                # 必须 await 而非 create_task：前端 onDone 回调会立即调
+                # getMessages 重新拉取消息列表。若 create_task 尚未落库就触发
+                # getMessages，会出现"AI 消息输出后瞬间消失"的现象。
+                # Save response and update stats before stream ends
+                try:
+                    await self._save_stream_response_with_stats(
                         conv_id=conv_id,
                         user_content=user_content,
                         full_content=full_content,
@@ -295,7 +297,8 @@ class ChatService:
                         user=user,
                         model_config=model_config,
                     )
-                )
+                except Exception as e:
+                    logger.error(f"Stream save failed: {e}", exc_info=True)
 
         return StreamingResponse(
             stream_generator(),
