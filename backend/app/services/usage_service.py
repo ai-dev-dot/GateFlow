@@ -66,12 +66,15 @@ class UsageService:
         dimension: str = "user",
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
+        user_id: Optional[UUID] = None,
     ) -> list:
         """按维度聚合用量统计
 
         dimension: "user" | "department" | "model" | "api_key"
         """
         filters = []
+        if user_id:
+            filters.append(UsageStat.user_id == user_id)
         if start_date:
             filters.append(UsageStat.date >= start_date)
         if end_date:

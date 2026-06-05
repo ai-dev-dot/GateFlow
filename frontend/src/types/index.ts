@@ -132,24 +132,6 @@ export interface AuditLog {
 // 用量统计
 // ---------------------
 
-export interface UsageSummary {
-  total_requests: number;
-  total_tokens: number;
-  by_model: {
-    model_name: string;
-    requests: number;
-    tokens: number;
-  }[];
-  by_user: {
-    user_id: number;
-    username: string;
-    requests: number;
-    tokens: number;
-  }[];
-  period_start: string;
-  period_end: string;
-}
-
 export interface UsageSummaryItem {
   dimension: string;
   request_count: number;

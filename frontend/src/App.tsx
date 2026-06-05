@@ -4,6 +4,7 @@ import AppLayout from './components/Layout'
 import Login from './pages/Login'
 import Chat from './pages/Chat'
 import Dashboard from './pages/Dashboard'
+import UserDashboard from './pages/UserDashboard'
 import Gateway from './pages/Gateway'
 import Users from './pages/Users'
 import Audit from './pages/Audit'
@@ -18,6 +19,7 @@ function App() {
         <Route index element={<Navigate to="/chat" replace />} />
         <Route path="chat" element={<Chat />} />
         <Route path="dashboard" element={<Dashboard />} />
+        <Route path="my-usage" element={<UserDashboard />} />
         <Route path="gateway" element={<Gateway />} />
         <Route path="users" element={<Users />} />
         <Route path="audit" element={<Audit />} />

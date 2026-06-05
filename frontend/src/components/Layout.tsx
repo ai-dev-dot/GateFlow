@@ -17,14 +17,16 @@ import { useAuthStore } from '@/stores/auth'
 
 const { Header, Sider, Content } = Layout
 
-const menuItems = [
-  { key: '/chat', icon: <MessageOutlined />, label: 'AI 对话' },
-  { key: '/dashboard', icon: <DashboardOutlined />, label: '数据看板' },
-  { key: '/gateway', icon: <ApiOutlined />, label: '闸机管理' },
-  { key: '/users', icon: <UserOutlined />, label: '人员管理' },
-  { key: '/audit', icon: <AuditOutlined />, label: '审批中心' },
-  { key: '/usage', icon: <BarChartOutlined />, label: '使用统计' },
-  { key: '/api-keys', icon: <KeyOutlined />, label: 'API Key' },
+/** 所有菜单项及所需角色，admin 可见全部 */
+const allMenuItems = [
+  { key: '/chat', icon: <MessageOutlined />, label: 'AI 对话', roles: ['admin', 'user'] },
+  { key: '/dashboard', icon: <DashboardOutlined />, label: '全局看板', roles: ['admin'] },
+  { key: '/my-usage', icon: <BarChartOutlined />, label: '我的用量', roles: ['user'] },
+  { key: '/gateway', icon: <ApiOutlined />, label: '闸机管理', roles: ['admin'] },
+  { key: '/users', icon: <UserOutlined />, label: '人员管理', roles: ['admin'] },
+  { key: '/audit', icon: <AuditOutlined />, label: '审批中心', roles: ['admin'] },
+  { key: '/usage', icon: <BarChartOutlined />, label: '使用统计', roles: ['admin'] },
+  { key: '/api-keys', icon: <KeyOutlined />, label: 'API Key', roles: ['admin'] },
 ]
 
 export default function AppLayout() {
@@ -32,6 +34,12 @@ export default function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const logout = useAuthStore((state) => state.logout)
+  const user = useAuthStore((state) => state.user)
+
+  const role = user?.role || 'user'
+  const menuItems = allMenuItems
+    .filter((item) => item.roles.includes(role))
+    .map(({ roles: _, ...item }) => item)
 
   const userMenuItems = [
     { key: 'logout', icon: <LogoutOutlined />, label: '退出登录' },
@@ -95,7 +103,7 @@ export default function AppLayout() {
           <Dropdown menu={{ items: userMenuItems, onClick: onUserMenuClick }} placement="bottomRight">
             <Space style={{ cursor: 'pointer' }}>
               <Avatar icon={<UserOutlined />} />
-              <span>管理员</span>
+              <span>{user?.username || '未登录'}</span>
             </Space>
           </Dropdown>
         </Header>
