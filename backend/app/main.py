@@ -17,15 +17,20 @@ from app.routers.gateway_forward import router as gateway_forward_router
 from app.routers.provider_keys import router as provider_keys_router
 from app.routers.usage import router as usage_router
 from app.routers.users import router as users_router
+from app.config import get_settings
 from app.services.auth_service import AuthService
 from app.utils.crypto import verify_fernet_works
 from app.utils.hashing import verify_hmac_works
 from app.utils.http_client import close_http_client
+from app.utils.request_id import RequestIDMiddleware
+from app.utils.startup_checks import verify_jwt_secret_not_placeholder
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Fail-fast: verify crypto config works before serving any traffic
+    # Fail-fast: verify all critical config BEFORE serving any traffic.
+    # Order matters — cheapest / most likely to fail checks first.
+    verify_jwt_secret_not_placeholder()  # P0-1
     verify_fernet_works()
     verify_hmac_works()
 
@@ -56,9 +61,20 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="闸机 GateFlow", version="0.1.0", lifespan=lifespan)
 
+# Request ID middleware must be added BEFORE CORS so every request has
+# an id available during CORS preflight handling too.
+app.add_middleware(RequestIDMiddleware)
+
+# CORS origins from .env (comma-separated). Default: localhost dev only.
+# Production: set ALLOWED_ORIGINS="https://gateflow.example.com,https://admin.gateflow.example.com"
+_allowed_origins = [
+    origin.strip()
+    for origin in get_settings().ALLOWED_ORIGINS.split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

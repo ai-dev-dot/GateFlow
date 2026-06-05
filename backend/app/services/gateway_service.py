@@ -161,9 +161,15 @@ class GatewayService:
             status_code = 504
             response_body = adapter.format_error(504, {"detail": "Upstream read timeout"})
         except Exception as e:
-            logger.error(f"Request error: {e}")
+            # P0-4: never leak str(exception) to client.
+            from app.utils.errors import get_request_id_safe
+            rid = get_request_id_safe()
+            logger.error(f"[{rid}] Request error: {e!r}", exc_info=True)
             status_code = 500
-            response_body = adapter.format_error(500, {"detail": str(e)})
+            response_body = adapter.format_error(
+                500,
+                {"detail": "Internal error", "request_id": rid},
+            )
 
         latency_ms = int((time.monotonic() - start_time) * 1000)
 

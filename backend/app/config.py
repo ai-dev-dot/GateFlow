@@ -15,14 +15,19 @@ class Settings(BaseSettings):
     ADMIN_PASSWORD: str = "admin123"
 
     # Audit log data policy (see README "数据存储与隐私" + spec §6.3)
-    # When true, full request/response bodies are encrypted and persisted.
-    # When false, only a short truncated preview of the body is stored
-    # (plaintext). Long bodies are rendered as "head50...tail20" so a
-    # short prompt is NOT fully exposed in the preview field.
     AUDIT_LOG_FULL_BODY: bool = False
-    AUDIT_LOG_PREVIEW_CHARS: int = 80  # 50 + "..." + 20 = 73; rounded to 80
+    AUDIT_LOG_PREVIEW_CHARS: int = 80
     AUDIT_LOG_RETENTION_DAYS: int = 90
     ENABLE_PII_REDACTION: bool = False
+
+    # CORS allowed origins. Comma-separated string in .env, parsed to list.
+    # Example: ALLOWED_ORIGINS="http://localhost:3000,https://gateflow.example.com"
+    ALLOWED_ORIGINS: str = "http://localhost:3000"
+
+    # Database connection pool tuning (P0-5). Adjust for your traffic profile.
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_RECYCLE_SECONDS: int = 1800
 
     class Config:
         env_file = ".env"

@@ -197,8 +197,17 @@ class StreamForwarder:
                 yield adapter.error_sse("Upstream read timeout", "timeout")
                 status_code = 504
             except Exception as e:
-                logger.error(f"Stream error: {e}")
-                yield adapter.error_sse(str(e), "internal_error")
+                # P0-4: never leak str(exception) to client. Log full
+                # context (with request_id) and yield a fixed message
+                # SSE event that includes the request_id for support
+                # correlation.
+                from app.utils.errors import get_request_id_safe
+                rid = get_request_id_safe()
+                logger.error(f"[{rid}] Stream error: {e!r}", exc_info=True)
+                yield adapter.error_sse(
+                    f"Internal error (request_id: {rid})",
+                    "internal_error",
+                )
                 status_code = 500
             finally:
                 latency_ms = int((time.monotonic() - start_time) * 1000)

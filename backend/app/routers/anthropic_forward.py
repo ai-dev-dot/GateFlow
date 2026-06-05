@@ -225,8 +225,14 @@ async def messages(
                     yield anthropic.error_sse("Upstream read timeout", "timeout")
                     status_code = 504
                 except Exception as e:
-                    logger.error(f"Bridge stream error: {e}")
-                    yield anthropic.error_sse(str(e), "internal_error")
+                    # P0-4: never leak str(exception) to client.
+                    from app.utils.errors import get_request_id_safe
+                    rid = get_request_id_safe()
+                    logger.error(f"[{rid}] Bridge stream error: {e!r}", exc_info=True)
+                    yield anthropic.error_sse(
+                        f"Internal error (request_id: {rid})",
+                        "internal_error",
+                    )
                     status_code = 500
                 finally:
                     latency_ms = int((_time.monotonic() - start_time) * 1000)
@@ -304,11 +310,17 @@ async def messages(
                         status_code=response.status_code,
                         content=anthropic.format_error(
                             response.status_code,
-                            {"detail": response.text[:500]},
+                            # P0-4: don't echo upstream's raw error text to
+                            # the client. The text is logged server-side
+                            # for debugging; clients get a fixed message.
+                            {"detail": f"Upstream returned {response.status_code}"},
                         ),
                     )
             except Exception as e:
-                logger.error(f"Anthropic bridge error: {e}")
+                # P0-4: never leak str(exception) to client.
+                from app.utils.errors import get_request_id_safe
+                rid = get_request_id_safe()
+                logger.error(f"[{rid}] Anthropic bridge error: {e!r}", exc_info=True)
                 # Persist failure stats
                 forwarder = StreamForwarder(db, upstream_adapter)
                 await forwarder._save_after_stream(
@@ -324,5 +336,8 @@ async def messages(
                 )
                 return JSONResponse(
                     status_code=500,
-                    content=anthropic.format_error(500, {"detail": str(e)}),
+                    content=anthropic.format_error(
+                        500,
+                        {"detail": "Internal error", "request_id": rid},
+                    ),
                 )

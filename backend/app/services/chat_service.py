@@ -180,8 +180,13 @@ class ChatService:
             return content or "(empty response)", output_tokens
 
         except Exception as e:
-            logger.error(f"LLM call failed: {e}", exc_info=True)
-            return f"(error: {str(e)})", 0
+            # P0-4: never leak str(exception) to the client. Fixed message
+            # goes into the AI message slot; full error is in server logs
+            # (findable by request_id via the upstream RequestIDMiddleware).
+            from app.utils.errors import get_request_id_safe
+            rid = get_request_id_safe()
+            logger.error(f"[{rid}] LLM call failed: {e!r}", exc_info=True)
+            return f"(服务暂时不可用，请稍后重试。如需排查请提供 request_id: {rid})", 0
 
     # ---------- 流式发送（主路径）----------
 
