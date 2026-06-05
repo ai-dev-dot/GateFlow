@@ -97,41 +97,44 @@ api_key  = "gf_your_enterprise_token"        # 闸机发的 Token
 
 ## 快速开始
 
-### 一键部署（推荐）
+### 前置环境
+
+- Python 3.13+
+- Node.js 20+
+- PostgreSQL 14+（运行中）
+
+### 1. 克隆并配置
+
 ```bash
-# 克隆仓库
-git clone https://github.com/your-username/gateflow.git
-cd gateflow
-
-# 创建并激活虚拟环境
-python -m venv venv
-# Windows
-venv\Scripts\activate
-# Mac/Linux
-source venv/bin/activate
-
-# 安装依赖
-pip install -r requirements.txt
-
-# 复制环境变量文件
-cp .env.example .env
-
-# 编辑环境变量，配置数据库和大模型API Key
-# vim .env
-
-# 初始化数据库
-python main.py init-db
-
-# 启动服务
-python main.py run
+git clone https://github.com/ai-dev-dot/GateFlow.git
+cd GateFlow
+cp backend/.env.example backend/.env
+# 编辑 backend/.env，至少需要填 DATABASE_URL 和 JWT_SECRET_KEY
 ```
 
-访问 `http://localhost:3000` 即可使用，默认管理员账号：`admin@gateflow.local`，密码：`admin123`
+### 2. 安装依赖
 
-### Docker部署
 ```bash
-docker-compose up -d
+bash setup.sh    # Linux/Mac
+# Windows: 双击 setup.bat
 ```
+
+`setup.sh` 会自动创建 Python 虚拟环境并安装后端、前端依赖。仅首次运行需要。
+
+### 3. 启动服务
+
+```bash
+bash start.sh    # Linux/Mac
+# Windows: 双击 start.bat
+```
+
+启动后访问：
+
+- 前端：`http://localhost:3000`
+- 后端：`http://localhost:8000`
+- API 文档：`http://localhost:8000/docs`
+
+默认管理员账号：`admin` / `admin123`（首次登录后请改密）
 
 ## 系统架构
 
