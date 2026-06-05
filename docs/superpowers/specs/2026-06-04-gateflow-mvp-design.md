@@ -488,6 +488,11 @@ class BaseAdapter(ABC):
     def error_sse(self, message: str, error_type: str) -> str: ...
 ```
 
+**协议桥接**：`AnthropicAdapter` 额外提供格式转换方法，用于客户端发 Anthropic 格式但上游是 OpenAI 兼容 provider 的场景：
+- `to_openai_request(body, target_model)` — Anthropic 请求体 → OpenAI 请求体
+- `from_openai_response(response)` — OpenAI 响应 → Anthropic 响应
+- `from_openai_sse_chunk(data)` — OpenAI SSE chunk → Anthropic SSE 事件
+
 **两条路径：**
 
 ```
@@ -497,7 +502,7 @@ Claude Code → POST /v1/messages (Anthropic 格式)
         GatewayService + AnthropicAdapter
                 │
                 ▼
-        上游 Anthropic API（透传原始格式）
+        上游 API（透传或协议桥接，取决于 provider）
 
 Chat 页面 → POST /api/chat/.../messages/stream
                 │
@@ -511,7 +516,7 @@ Chat 页面 → POST /api/chat/.../messages/stream
         前端收到 OpenAI SSE（choices[].delta.content）
 ```
 
-- `/v1/messages` 端点：透传上游原始 Anthropic 格式，Claude Code 等原生客户端直接使用
+- `/v1/messages` 端点：接受 Anthropic 格式请求。若上游是 Anthropic provider 则透传；若上游是 OpenAI 兼容 provider（如 DeepSeek），自动做协议桥接（Anthropic 请求 → OpenAI 格式转发 → OpenAI 响应 → Anthropic 格式返回）
 - Chat 页面：ChatService 内部做 Anthropic → OpenAI 格式转换，前端无需改动
 
 ### 4.8 客户端类型管理（AgentType，v0.2.0）
@@ -578,8 +583,8 @@ DELETE /api/agent-types/{id}      # 删除类型（管理员）
 | username | string | 用户名（唯一） |
 | email | string | 邮箱（唯一） |
 | hashed_password | string | bcrypt 加密后的密码（60 字符） |
-| department_id | UUID | 所属部门 |
-| role_id | UUID | 角色 |
+| department_id | UUID | 所属部门（可选） |
+| role_id | UUID | 角色（可选，未指定时默认分配 "user" 角色） |
 | is_active | bool | 是否启用 |
 | created_at | datetime | 创建时间 |
 | last_login | datetime | 最后登录时间 |
@@ -611,7 +616,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 |-----|------|------|
 | id | UUID | 主键 |
 | name | string | 角色名（admin/user/viewer） |
-| permissions | JSON | 权限列表 |
+| permissions | JSON | 权限配置（dict 格式，如 `{"all": true}` 表示全部权限，`{"models": ["gpt-4"]}` 表示限定模型） |
 
 **Department（部门）**
 
@@ -678,6 +683,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 | rate_limit | int | 每分钟请求数限制 |
 | expires_at | datetime | 过期时间（可选，空=永不过期） |
 | is_active | bool | 是否启用 |
+| agent_type_id | UUID | 客户端类型（FK → agent_types，可选） |
 | created_at | datetime | 创建时间 |
 | last_used_at | datetime | 最后使用时间 |
 
@@ -955,6 +961,7 @@ GET /api/usage/summary?
 | `/api/users/{id}` | DELETE | 删除用户 |
 | `/api/users/departments` | GET | 部门列表 |
 | `/api/users/departments` | POST | 创建部门 |
+| `/api/users/departments/{id}` | DELETE | 删除部门 |
 
 ### 9.3 API Key 管理
 
