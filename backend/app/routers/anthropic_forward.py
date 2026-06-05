@@ -114,7 +114,7 @@ async def messages(
             )
 
         upstream_url = upstream_adapter.build_upstream_url(model_config.target_url)
-        upstream_headers = upstream_adapter.build_headers(provider_key.key)
+        upstream_headers = upstream_adapter.build_headers(provider_key.get_decrypted_key())
         forward_body = upstream_adapter.build_request_body(
             openai_body,
             model_config.target_model,

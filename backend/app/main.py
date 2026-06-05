@@ -18,11 +18,17 @@ from app.routers.provider_keys import router as provider_keys_router
 from app.routers.usage import router as usage_router
 from app.routers.users import router as users_router
 from app.services.auth_service import AuthService
+from app.utils.crypto import verify_fernet_works
+from app.utils.hashing import verify_hmac_works
 from app.utils.http_client import close_http_client
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Fail-fast: verify crypto config works before serving any traffic
+    verify_fernet_works()
+    verify_hmac_works()
+
     # Create tables on startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

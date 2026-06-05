@@ -12,6 +12,7 @@ from app.schemas.provider_key import (
     ProviderKeyResponse,
     ProviderKeyUpdate,
 )
+from app.utils.crypto import encrypt_key, key_preview
 
 router = APIRouter(prefix="/api/gateway/provider-keys", tags=["上游 Key 管理"])
 
@@ -22,7 +23,7 @@ async def list_provider_keys(
     db: AsyncSession = Depends(get_db),
     _admin=Depends(require_admin),
 ):
-    """列出所有上游 API Key，可按 provider 过滤"""
+    """列出所有上游 API Key，可按 provider 过滤（不返回完整 key）"""
     stmt = select(ProviderAPIKey)
     if provider:
         stmt = stmt.where(ProviderAPIKey.provider == provider)
@@ -36,10 +37,11 @@ async def create_provider_key(
     db: AsyncSession = Depends(get_db),
     _admin=Depends(require_admin),
 ):
-    """创建上游 API Key（管理员）"""
+    """创建上游 API Key（管理员）—— key 在落库前 Fernet 加密，响应只返 key_preview"""
     provider_key = ProviderAPIKey(
         provider=request.provider,
-        key=request.key,
+        encrypted_key=encrypt_key(request.key),
+        key_preview=key_preview(request.key),
         name=request.name,
         remark=request.remark,
         rpm_limit=request.rpm_limit,

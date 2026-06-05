@@ -12,6 +12,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.models.base import Base, TimestampMixin
+from app.utils.crypto import decrypt_key
 
 
 class ProviderAPIKey(Base, TimestampMixin):
@@ -19,7 +20,11 @@ class ProviderAPIKey(Base, TimestampMixin):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     provider = Column(String(50), index=True, nullable=False)
-    key = Column(String(255), unique=True, nullable=False)
+    # Fernet-encrypted upstream key. NEVER store plaintext. The plaintext is
+    # only ever materialized inside build_headers() via get_decrypted_key().
+    encrypted_key = Column(Text, unique=True, nullable=False)
+    # Display-only short form, e.g. "sk-aB...xY7". Safe to log/show.
+    key_preview = Column(String(20), nullable=False)
     name = Column(String(100), nullable=False)
     remark = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, index=True, nullable=False)
@@ -34,3 +39,12 @@ class ProviderAPIKey(Base, TimestampMixin):
     cool_down_until = Column(DateTime, nullable=True)
     last_used_at = Column(DateTime, nullable=True, index=True)
     last_error_at = Column(DateTime, nullable=True)
+
+    def get_decrypted_key(self) -> str:
+        """Decrypt the upstream key. Only call from the request handler that
+        needs to build the upstream Authorization header. The returned string
+        is intentionally a local variable in the caller's frame — never store
+        it, never log it.
+        """
+        return decrypt_key(self.encrypted_key)
+

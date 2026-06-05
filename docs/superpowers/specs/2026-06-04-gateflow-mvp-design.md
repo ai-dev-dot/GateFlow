@@ -352,7 +352,8 @@ async def handle_api_key_error(key: ProviderAPIKey, error: Exception):
 |-----|------|------|------|
 | id | UUID | 主键 | - |
 | provider | string | 提供商标识（索引） | `deepseek` |
-| key | string(255) | 上游 API Key（唯一） | `sk-xxx...` |
+| encrypted_key | text | 上游 API Key 的 Fernet 密文（**唯一**） | `gAAAAA...` |
+| key_preview | string(20) | 展示用前缀（前 4 + `...` + 后 4） | `sk-aB...xY7` |
 | name | string | Key 名称 | `DeepSeek-企业版-1号` |
 | remark | string | 备注（用途、负责人） | `技术部专用 Key` |
 | is_active | bool | 是否启用（索引） | `true` |
@@ -367,6 +368,13 @@ async def handle_api_key_error(key: ProviderAPIKey, error: Exception):
 | cool_down_until | datetime | 冷却截止时间 | - |
 | created_at | datetime | 创建时间 | - |
 | last_used_at | datetime | 最后使用时间（索引） | - |
+
+**Key 加密实现：**
+- 上游 API Key 在落库前用 `Fernet(ENCRYPTION_KEY)` 对称加密，明文从不进 DB
+- 模型层提供 `get_decrypted_key()` 方法，仅在 `build_headers()` 调用链中解密为局部变量，函数返回即销毁
+- 列表接口 (`GET /api/gateway/provider-keys`) 永不返回完整 key，只返回 `key_preview`
+- 创建/更新接口（POST/PUT）接收明文，落库前加密
+- 加密密钥 `ENCRYPTION_KEY` 强制从 .env 读取（44 字节 base64，启动时 fail-fast 校验）
 
 **核心关系：**
 - 一个 `provider` 对应多个 `ProviderAPIKey`
@@ -648,7 +656,11 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 **API Key（工具/系统集成使用）：**
 ```
 1. 用户在后台创建 API Key: POST /api/api-keys
-   → 返回 gf_xxxxxx 格式的 Key（只显示一次）
+   → 服务端生成 gf_xxxxxx 格式的 Key
+   → 计算 key_hash = HMAC-SHA256(HMAC_SECRET, key) 存 DB
+   → 计算 key_prefix = key[:11] 存 DB
+   → 响应中**只此一次**返回完整明文 Key（APIKeyCreated schema）
+   → 关闭弹窗后**无法**再查看明文
 
 2. 工具配置:
    base_url = "http://your-gateflow:8000/v1"
@@ -657,7 +669,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 3. API 调用: POST /v1/chat/completions
    → Header: Authorization: Bearer gf_xxxxxx
    → 中间件识别 gf_ 前缀，走 API Key 验证
-   → 查询 api_keys 表，验证 Key 有效性和权限
+   → 计算 incoming_hash = HMAC-SHA256(HMAC_SECRET, incoming_key)
+   → SELECT * FROM api_keys WHERE key_hash = incoming_hash AND is_active
+   → 验证通过后注入 user 上下文
 ```
 
 ### 5.4 API Key 数据模型
@@ -669,7 +683,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 | id | UUID | 主键 |
 | user_id | UUID | 所属用户 |
 | name | string | Key 名称（如"我的 Cursor Key"） |
-| key | string(64) | Key 值，`gf_` 前缀 + 60 位随机字符，唯一 |
+| key_hash | string(64) | HMAC-SHA256(HMAC_SECRET, key) 的 hex 摘要（**唯一，索引**） |
+| key_prefix | string(12) | 展示用前缀（前 11 字符，如 `gf_aB3xY7Kj`） |
 | permissions | JSON | 权限列表（可限制可用模型） |
 | rate_limit | int | 每分钟请求数限制 |
 | expires_at | datetime | 过期时间（可选，空=永不过期） |
@@ -683,6 +698,15 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 格式: gf_ + 60位随机字符
 示例: gf_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0
 ```
+
+**Key 哈希实现：**
+- 创建时生成 `secrets.token_urlsafe(45)` 随机串，拼上 `gf_` 前缀
+- 立即计算 `key_hash = HMAC-SHA256(HMAC_SECRET, full_key).hexdigest()` 落库
+- 明文 Key 通过 `APIKeyCreated` schema **只返回一次**给客户端
+- 列表接口 (`GET /api/api-keys`) 永不返回完整 key，只返回 `key_prefix`
+- 认证中间件：收到 `gf_xxx` → 计算 HMAC → DB 索引查找（O(1)）→ 验证 active / expires_at
+- HMAC 是单向函数：DB dump 拿到 `key_hash` 无法反推完整 Key
+- 配合 `HMAC_SECRET` 强制从 .env 读取（启动时 fail-fast 校验），实现"DB 单独泄露 ≠ Key 泄露"
 
 ### 5.5 JWT Token 结构
 
@@ -1009,12 +1033,17 @@ GET /api/usage/summary?dimension=user
 
 ### 9.3 API Key 管理
 
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/api/api-keys` | GET | 获取当前用户的 API Key 列表 |
-| `/api/api-keys` | POST | 创建新的 API Key |
-| `/api/api-keys/{id}` | PUT | 更新 API Key（名称、权限、限速） |
-| `/api/api-keys/{id}` | DELETE | 吊销 API Key |
+| 端点 | 方法 | 说明 | 响应 schema |
+|------|------|------|------------|
+| `/api/api-keys` | GET | 获取当前用户的 API Key 列表 | `APIKeyResponse[]`（只含 `key_prefix`，**不含**完整 key） |
+| `/api/api-keys` | POST | 创建新的 API Key | `APIKeyCreated`（**只此一次**返回完整明文 `key`，前端必须立即提示用户保存） |
+| `/api/api-keys/{id}` | PUT | 更新 API Key（名称、权限、限速） | `APIKeyResponse`（不含完整 key） |
+| `/api/api-keys/{id}` | DELETE | 吊销 API Key | - |
+
+**前端展示规则：**
+- 列表页 Key 列显示 `gf_aB3xY7***`（`key_prefix` + `***`），不显示完整
+- 创建后弹窗强制显示完整 Key + 复制按钮 + "关闭后无法再查看" 警示
+- 不提供"查看完整 Key"接口（GitHub / Stripe / AWS 模式）
 
 ### 9.4 网关管理（admin）
 
@@ -1029,13 +1058,19 @@ GET /api/usage/summary?dimension=user
 
 **上游 API Key 管理（ProviderAPIKey）：**
 
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/api/gateway/provider-keys` | GET | 上游 API Key 列表（支持按 provider 筛选） |
-| `/api/gateway/provider-keys` | POST | 添加上游 API Key |
-| `/api/gateway/provider-keys/{id}` | PUT | 更新 Key（名称、备注、限速、启用/禁用） |
-| `/api/gateway/provider-keys/{id}` | DELETE | 删除 Key |
-| `/api/gateway/provider-keys/{id}/reset` | POST | 重置 Key 状态（清除错误计数、解封） |
+| 端点 | 方法 | 说明 | 响应 schema |
+|------|------|------|------------|
+| `/api/gateway/provider-keys` | GET | 上游 API Key 列表（支持按 provider 筛选） | `ProviderKeyResponse[]`（只含 `key_preview`，**不含**完整 key） |
+| `/api/gateway/provider-keys` | POST | 添加上游 API Key（请求体含明文 key） | `ProviderKeyResponse`（落库前已加密，响应**也不含**完整 key） |
+| `/api/gateway/provider-keys/{id}` | PUT | 更新 Key（名称、备注、限速、启用/禁用） | `ProviderKeyResponse` |
+| `/api/gateway/provider-keys/{id}` | DELETE | 删除 Key | - |
+| `/api/gateway/provider-keys/{id}/reset` | POST | 重置 Key 状态（清除错误计数、解封） | `ProviderKeyResponse` |
+
+**前端展示规则：**
+- 列表页 Key 列显示 `sk-aB...xY7`（`key_preview` 格式）
+- 添加弹窗要求用户**粘贴**完整明文 key（落库前 Fernet 加密）
+- 添加成功后**不显示**完整明文——管理员必须在上游 provider 后台查看
+- 不提供"查看完整 Key"接口
 
 ### 9.5 网关转发
 
@@ -1218,3 +1253,32 @@ async def forward_stream_request():
                 headers=headers
             )
 ```
+
+---
+
+## 附录 A：环境变量
+
+所有配置项通过 `.env` 文件读取，**强制必填项缺失时启动直接 fail-fast**（不静默回退到默认值）。
+
+| 变量名 | 必填 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `DATABASE_URL` | ✅ | 无 | PostgreSQL 异步连接串，如 `postgresql+asyncpg://user:pass@host:5432/dbname` |
+| `JWT_SECRET_KEY` | ✅ | 无 | JWT 签名密钥，**至少 32 字节随机串**。生成：`python -c "import secrets;print(secrets.token_urlsafe(48))"` |
+| `ENCRYPTION_KEY` | ✅ | 无 | 上游 API Key 加密密钥。**必须是 Fernet 格式**（44 字节 base64 编码的 32 字节密钥）。生成：`python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"` |
+| `HMAC_SECRET` | ✅ | 无 | 客户端 API Key 哈希密钥，**至少 32 字节随机串**。生成：`python -c "import secrets;print(secrets.token_urlsafe(48))"` |
+| `JWT_EXPIRE_DAYS` | ❌ | `7` | JWT Token 有效期（天） |
+| `ADMIN_USERNAME` | ❌ | `admin` | 首次启动自动创建的默认管理员用户名 |
+| `ADMIN_PASSWORD` | ❌ | `admin123` | 首次启动自动创建的默认管理员密码，**生产环境必须改** |
+
+**安全约束：**
+
+1. `JWT_SECRET_KEY`、`ENCRYPTION_KEY`、`HMAC_SECRET` **三者在生产环境必须分别独立**，互不派生
+2. 三个密钥**禁止写入 git**，仅在 `.env` 中维护（`.env` 已在 `.gitignore`）
+3. 密钥泄露时**必须全部轮换**——只轮换一个则历史数据/Token 仍可被解密
+4. 启动时 `lifespan` 校验三密钥能正常工作（加解密一个占位串），失败立即退出
+
+**Key 轮换说明（v0.2.0 暂不实现，预留）：**
+
+- `ENCRYPTION_KEY` 轮换：当前实现读单个 key，未来可扩展为读 key list（`[key1, key2, key3]`），用最新 key 加密、旧 key 都能解密。轮换时跑一次"读旧密文 → 用新 key 重加密"脚本
+- `HMAC_SECRET` 轮换：API Key 是不可逆哈希，**轮换 HMAC_SECRET 等于作废所有现有 API Key**，需提前通知用户重发
+- `JWT_SECRET_KEY` 轮换：所有现有 JWT Token 立即失效，前端会被踢回登录页

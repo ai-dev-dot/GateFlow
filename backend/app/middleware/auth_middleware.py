@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models import APIKey, User
+from app.utils.hashing import hash_api_key
 from app.utils.security import decode_access_token
 
 security = HTTPBearer(auto_error=False)
@@ -28,8 +29,10 @@ async def get_current_user(
 
     # Check if it's API Key (starts with gf_)
     if token.startswith("gf_"):
+        # O(1) indexed lookup by HMAC hash (plaintext is never stored).
+        incoming_hash = hash_api_key(token)
         result = await db.execute(
-            select(APIKey).where(APIKey.key == token, APIKey.is_active == True)
+            select(APIKey).where(APIKey.key_hash == incoming_hash, APIKey.is_active == True)
         )
         api_key = result.scalar_one_or_none()
 
@@ -103,8 +106,10 @@ async def get_auth_context(
     agent_type = None
 
     if token.startswith("gf_"):
+        # O(1) indexed lookup by HMAC hash (plaintext is never stored).
+        incoming_hash = hash_api_key(token)
         result = await db.execute(
-            select(APIKey).where(APIKey.key == token, APIKey.is_active == True)
+            select(APIKey).where(APIKey.key_hash == incoming_hash, APIKey.is_active == True)
         )
         api_key = result.scalar_one_or_none()
 

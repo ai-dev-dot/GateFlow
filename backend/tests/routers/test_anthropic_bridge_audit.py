@@ -71,8 +71,13 @@ async def test_anthropic_bridge_path_creates_audit_log(db_session, test_user):
         default_max_tokens=2048,
     )
     db_session.add(mc)
+    from app.utils.crypto import encrypt_key, key_preview
     pk = ProviderAPIKey(
-        provider="openai", key="sk-fake-deepseek", name="deepseek-prod", is_active=True
+        provider="openai",
+        encrypted_key=encrypt_key("sk-fake-deepseek"),
+        key_preview=key_preview("sk-fake-deepseek"),
+        name="deepseek-prod",
+        is_active=True,
     )
     db_session.add(pk)
     await db_session.commit()

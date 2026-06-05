@@ -18,6 +18,7 @@ from app.models.provider_key import ProviderAPIKey
 from app.services.audit_service import AuditService
 from app.services.provider_adapters import OpenAIAdapter
 from app.services.stream_forwarder import StreamForwarder
+from app.utils.crypto import encrypt_key, key_preview
 
 # ---------- Fake upstream helpers ----------
 
@@ -74,7 +75,13 @@ async def _make_audit_and_key(db_session, test_user):
     await db_session.commit()
     await db_session.refresh(audit_log)
 
-    pk = ProviderAPIKey(provider="openai", key="sk-test", name="test-key", is_active=True)
+    pk = ProviderAPIKey(
+        provider="openai",
+        encrypted_key=encrypt_key("sk-test"),
+        key_preview=key_preview("sk-test"),
+        name="test-key",
+        is_active=True,
+    )
     db_session.add(pk)
     await db_session.commit()
     await db_session.refresh(pk)

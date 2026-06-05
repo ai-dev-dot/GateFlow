@@ -89,7 +89,7 @@ class GatewayService:
 
         # Build upstream request via adapter
         upstream_url = self.adapter.build_upstream_url(model_config.target_url)
-        upstream_headers = self.adapter.build_headers(provider_key.key)
+        upstream_headers = self.adapter.build_headers(provider_key.get_decrypted_key())
         forward_body = self.adapter.build_request_body(
             request_body,
             model_config.target_model,

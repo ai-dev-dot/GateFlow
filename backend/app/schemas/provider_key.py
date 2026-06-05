@@ -26,7 +26,10 @@ class ProviderKeyResponse(BaseModel):
 
     id: UUID
     provider: str
-    key: str
+    # Display-only short form, e.g. "sk-aB...xY7". Full plaintext key is
+    # NEVER returned in any response (admin must keep it in their own
+    # password manager / upstream provider's console).
+    key_preview: str
     name: str
     remark: str | None = None
     is_active: bool

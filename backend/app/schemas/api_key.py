@@ -20,11 +20,38 @@ class APIKeyUpdate(BaseModel):
 
 
 class APIKeyResponse(BaseModel):
+    """List/get response — NEVER includes the plaintext key."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     name: str
-    key: str
+    # Display-only prefix, e.g. "gf_aB3cD4eF". Full key is not recoverable
+    # from this (it is HMAC-hashed, one-way).
+    key_prefix: str
+    permissions: list[str] | None = None
+    rate_limit: int
+    expires_at: datetime | None = None
+    is_active: bool
+    agent_type_id: UUID | None = None
+    created_at: datetime
+    last_used_at: datetime | None = None
+
+
+class APIKeyCreated(BaseModel):
+    """Create response — includes plaintext key ONE TIME.
+
+    The frontend must display this prominently with a "save now" warning.
+    After this response, the server has no way to recover the plaintext
+    (it only stored the HMAC hash).
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    key: str  # Full plaintext key, e.g. "gf_aB3cD4eF5gH6iJ7kL8mN..."
+    key_prefix: str
     permissions: list[str] | None = None
     rate_limit: int
     expires_at: datetime | None = None

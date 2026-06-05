@@ -152,7 +152,7 @@ class ChatService:
 
         adapter = get_adapter(model_config.provider)
         upstream_url = adapter.build_upstream_url(model_config.target_url)
-        headers = adapter.build_headers(provider_key.key)
+        headers = adapter.build_headers(provider_key.get_decrypted_key())
         body = adapter.build_request_body(
             {"messages": messages, "stream": False},
             model_config.target_model,
@@ -243,7 +243,7 @@ class ChatService:
         # Build upstream request
         adapter = get_adapter(model_config.provider)
         upstream_url = adapter.build_upstream_url(model_config.target_url)
-        upstream_headers = adapter.build_headers(provider_key.key)
+        upstream_headers = adapter.build_headers(provider_key.get_decrypted_key())
         body = adapter.build_request_body(
             {"messages": messages, "stream": True},
             model_config.target_model,
