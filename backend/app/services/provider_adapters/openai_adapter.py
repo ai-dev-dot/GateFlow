@@ -21,9 +21,7 @@ class OpenAIAdapter(BaseAdapter):
             "Content-Type": "application/json",
         }
 
-    def build_request_body(
-        self, body: dict, target_model: str, defaults: dict
-    ) -> dict:
+    def build_request_body(self, body: dict, target_model: str, defaults: dict) -> dict:
         forward_body = {**body, "model": target_model}
         if defaults.get("temperature") is not None and "temperature" not in body:
             forward_body["temperature"] = defaults["temperature"]
@@ -80,12 +78,16 @@ class OpenAIAdapter(BaseAdapter):
         return None
 
     def format_error(self, status: int, body: dict) -> dict:
-        return {"error": {"message": body.get("detail", str(body)), "type": "upstream_error", "code": status}}
+        return {
+            "error": {
+                "message": body.get("detail", str(body)),
+                "type": "upstream_error",
+                "code": status,
+            }
+        }
 
     def error_sse(self, message: str, error_type: str = "upstream_error") -> str:
-        error_data = json.dumps(
-            {"error": {"message": message, "type": error_type}}
-        )
+        error_data = json.dumps({"error": {"message": message, "type": error_type}})
         return f"data: {error_data}\n\n"
 
     def to_openai_sse(self, event: StreamEvent) -> str:
@@ -95,6 +97,8 @@ class OpenAIAdapter(BaseAdapter):
         if event.error:
             return self.error_sse(event.error)
         if event.text:
-            chunk = {"choices": [{"delta": {"content": event.text}, "index": 0, "finish_reason": None}]}
+            chunk = {
+                "choices": [{"delta": {"content": event.text}, "index": 0, "finish_reason": None}]
+            }
             return f"data: {json.dumps(chunk)}\n\n"
         return ""

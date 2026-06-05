@@ -1,22 +1,24 @@
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.database import engine, async_session
+
+from app.database import async_session, engine
 from app.models import Base
 from app.models.agent_type import AgentType
-from app.services.auth_service import AuthService
-from app.utils.http_client import close_http_client
-from app.routers.auth import router as auth_router
-from app.routers.users import router as users_router
+from app.routers.agent_types import router as agent_types_router
+from app.routers.anthropic_forward import router as anthropic_forward_router
 from app.routers.api_keys import router as api_keys_router
-from app.routers.provider_keys import router as provider_keys_router
+from app.routers.audit import router as audit_router
+from app.routers.auth import router as auth_router
+from app.routers.chat import router as chat_router
 from app.routers.gateway import router as gateway_router
 from app.routers.gateway_forward import router as gateway_forward_router
-from app.routers.audit import router as audit_router
+from app.routers.provider_keys import router as provider_keys_router
 from app.routers.usage import router as usage_router
-from app.routers.chat import router as chat_router
-from app.routers.anthropic_forward import router as anthropic_forward_router
-from app.routers.agent_types import router as agent_types_router
+from app.routers.users import router as users_router
+from app.services.auth_service import AuthService
+from app.utils.http_client import close_http_client
 
 
 @asynccontextmanager
@@ -33,6 +35,7 @@ async def lifespan(app: FastAPI):
     # Seed default AgentType values
     async with async_session() as db:
         from sqlalchemy import select
+
         result = await db.execute(select(AgentType).limit(1))
         if not result.scalar_one_or_none():
             for name in ["Claude Code", "Codex", "Cursor", "Dify", "LangChain", "自定义"]:

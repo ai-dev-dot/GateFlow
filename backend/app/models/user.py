@@ -1,8 +1,8 @@
 import uuid
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, JSON
-from sqlalchemy.orm import relationship
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 
 from app.models.base import Base, TimestampMixin
 
@@ -38,9 +38,7 @@ class User(Base, TimestampMixin):
     username = Column(String(50), unique=True, index=True, nullable=False)
     email = Column(String(255), unique=True, index=True, nullable=False)
     hashed_password = Column(String(60), nullable=False)
-    department_id = Column(
-        UUID(as_uuid=True), ForeignKey("departments.id"), nullable=True
-    )
+    department_id = Column(UUID(as_uuid=True), ForeignKey("departments.id"), nullable=True)
     role_id = Column(UUID(as_uuid=True), ForeignKey("roles.id"), nullable=True)
     is_active = Column(Boolean, default=True, index=True, nullable=False)
     last_login = Column(DateTime, nullable=True)

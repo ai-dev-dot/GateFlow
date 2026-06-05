@@ -1,24 +1,24 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from typing import List, Optional
 from uuid import UUID
 
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.database import get_db
+from app.middleware.auth_middleware import require_admin
 from app.models import ProviderAPIKey
 from app.schemas.provider_key import (
     ProviderKeyCreate,
-    ProviderKeyUpdate,
     ProviderKeyResponse,
+    ProviderKeyUpdate,
 )
-from app.middleware.auth_middleware import require_admin
 
 router = APIRouter(prefix="/api/gateway/provider-keys", tags=["上游 Key 管理"])
 
 
-@router.get("", response_model=List[ProviderKeyResponse])
+@router.get("", response_model=list[ProviderKeyResponse])
 async def list_provider_keys(
-    provider: Optional[str] = None,
+    provider: str | None = None,
     db: AsyncSession = Depends(get_db),
     _admin=Depends(require_admin),
 ):
@@ -59,9 +59,7 @@ async def update_provider_key(
     _admin=Depends(require_admin),
 ):
     """更新上游 API Key（管理员）"""
-    result = await db.execute(
-        select(ProviderAPIKey).where(ProviderAPIKey.id == key_id)
-    )
+    result = await db.execute(select(ProviderAPIKey).where(ProviderAPIKey.id == key_id))
     provider_key = result.scalar_one_or_none()
     if not provider_key:
         raise HTTPException(status_code=404, detail="上游 Key 不存在")
@@ -80,9 +78,7 @@ async def delete_provider_key(
     _admin=Depends(require_admin),
 ):
     """删除上游 API Key（管理员）"""
-    result = await db.execute(
-        select(ProviderAPIKey).where(ProviderAPIKey.id == key_id)
-    )
+    result = await db.execute(select(ProviderAPIKey).where(ProviderAPIKey.id == key_id))
     provider_key = result.scalar_one_or_none()
     if not provider_key:
         raise HTTPException(status_code=404, detail="上游 Key 不存在")
@@ -98,9 +94,7 @@ async def reset_provider_key(
     _admin=Depends(require_admin),
 ):
     """重置上游 Key 状态：清除错误计数、解除封禁（管理员）"""
-    result = await db.execute(
-        select(ProviderAPIKey).where(ProviderAPIKey.id == key_id)
-    )
+    result = await db.execute(select(ProviderAPIKey).where(ProviderAPIKey.id == key_id))
     provider_key = result.scalar_one_or_none()
     if not provider_key:
         raise HTTPException(status_code=404, detail="上游 Key 不存在")

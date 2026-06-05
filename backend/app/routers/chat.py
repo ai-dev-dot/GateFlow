@@ -1,4 +1,3 @@
-from typing import List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -19,7 +18,7 @@ from app.services.chat_service import ChatService
 router = APIRouter(prefix="/api/chat", tags=["问答对话"])
 
 
-@router.get("/conversations", response_model=List[ConversationResponse])
+@router.get("/conversations", response_model=list[ConversationResponse])
 async def list_conversations(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -44,7 +43,7 @@ async def create_conversation(
 
 @router.get(
     "/conversations/{conversation_id}/messages",
-    response_model=List[MessageResponse],
+    response_model=list[MessageResponse],
 )
 async def get_messages(
     conversation_id: UUID,
@@ -78,9 +77,7 @@ async def send_message(
 ):
     """发送消息并获取 AI 回复"""
     service = ChatService(db)
-    message = await service.send_message(
-        conversation_id, current_user, body.content
-    )
+    message = await service.send_message(conversation_id, current_user, body.content)
     if not message:
         raise HTTPException(status_code=404, detail="对话不存在")
     return message
@@ -98,9 +95,7 @@ async def send_message_stream(
 ):
     """发送消息并以 SSE 流式返回 AI 回复（打字机效果）"""
     service = ChatService(db)
-    response = await service.send_message_stream(
-        conversation_id, current_user, body.content
-    )
+    response = await service.send_message_stream(conversation_id, current_user, body.content)
     if not response:
         raise HTTPException(status_code=404, detail="对话不存在")
     return response

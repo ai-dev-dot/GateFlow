@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -14,7 +13,7 @@ class ProviderKeyService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_available_key(self, provider: str) -> Optional[ProviderAPIKey]:
+    async def get_available_key(self, provider: str) -> ProviderAPIKey | None:
         """
         Get an available key for the given provider.
 
@@ -44,9 +43,7 @@ class ProviderKeyService:
         )
         return result.scalar_one_or_none()
 
-    async def update_key_success(
-        self, key_id: UUID, input_tokens: int, output_tokens: int
-    ) -> None:
+    async def update_key_success(self, key_id: UUID, input_tokens: int, output_tokens: int) -> None:
         """
         Update key stats after a successful request.
         Uses atomic UPDATE (not read-then-write) to avoid race conditions.

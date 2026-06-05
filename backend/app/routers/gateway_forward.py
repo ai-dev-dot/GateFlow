@@ -1,5 +1,4 @@
 import logging
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -7,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth_middleware import get_auth_context, AuthContext
+from app.middleware.auth_middleware import AuthContext, get_auth_context
 from app.models import ModelConfig
 from app.services.gateway_service import GatewayError, GatewayService
 from app.services.provider_adapters import get_adapter
@@ -44,8 +43,8 @@ async def chat_completions(
     # Parse request body
     try:
         body = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    except Exception as err:
+        raise HTTPException(status_code=400, detail="Invalid JSON body") from err
 
     # Validate required fields
     model_alias = body.get("model")
@@ -54,9 +53,7 @@ async def chat_completions(
 
     messages = body.get("messages")
     if not messages or not isinstance(messages, list):
-        raise HTTPException(
-            status_code=400, detail="Missing or invalid field: messages"
-        )
+        raise HTTPException(status_code=400, detail="Missing or invalid field: messages")
 
     is_stream = body.get("stream", False)
 
@@ -111,9 +108,7 @@ async def list_models(
     Returns models in the OpenAI /v1/models response format,
     filtered to only active model configurations.
     """
-    result = await db.execute(
-        select(ModelConfig).where(ModelConfig.is_active == True)
-    )
+    result = await db.execute(select(ModelConfig).where(ModelConfig.is_active == True))
     models = result.scalars().all()
 
     return {

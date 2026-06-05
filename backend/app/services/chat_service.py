@@ -7,7 +7,6 @@ implemented as an `on_complete` hook.
 
 import json
 import logging
-from typing import Optional
 from uuid import UUID
 
 import httpx
@@ -19,8 +18,8 @@ from app.models.chat import Conversation, Message
 from app.models.gateway import ModelConfig
 from app.models.user import User
 from app.services.audit_service import AuditService
-from app.services.provider_key_service import ProviderKeyService
 from app.services.provider_adapters import get_adapter
+from app.services.provider_key_service import ProviderKeyService
 from app.services.stream_forwarder import StreamForwarder
 from app.utils.http_client import get_http_client
 
@@ -46,9 +45,7 @@ class ChatService:
         )
         return list(result.scalars().all())
 
-    async def get_messages(
-        self, conversation_id: UUID, user: User
-    ) -> list[Message]:
+    async def get_messages(self, conversation_id: UUID, user: User) -> list[Message]:
         result = await self.db.execute(
             select(Conversation).where(
                 Conversation.id == conversation_id,
@@ -66,9 +63,7 @@ class ChatService:
         )
         return list(result.scalars().all())
 
-    async def delete_conversation(
-        self, conversation_id: UUID, user: User
-    ) -> bool:
+    async def delete_conversation(self, conversation_id: UUID, user: User) -> bool:
         result = await self.db.execute(
             select(Conversation).where(
                 Conversation.id == conversation_id,
@@ -80,9 +75,7 @@ class ChatService:
             return False
 
         await self.db.execute(
-            Message.__table__.delete().where(
-                Message.conversation_id == conversation_id
-            )
+            Message.__table__.delete().where(Message.conversation_id == conversation_id)
         )
         await self.db.delete(conversation)
         await self.db.commit()
@@ -90,9 +83,7 @@ class ChatService:
 
     # ---------- 发送消息（非流式，保留兼容）----------
 
-    async def send_message(
-        self, conversation_id: UUID, user: User, content: str
-    ) -> Optional[Message]:
+    async def send_message(self, conversation_id: UUID, user: User, content: str) -> Message | None:
         """发送消息并获取 AI 回复（非流式）"""
         result = await self.db.execute(
             select(Conversation).where(
@@ -138,9 +129,7 @@ class ChatService:
         await self.db.refresh(ai_message)
         return ai_message
 
-    async def _call_llm(
-        self, model_alias: str, messages: list[dict]
-    ) -> tuple[str, int]:
+    async def _call_llm(self, model_alias: str, messages: list[dict]) -> tuple[str, int]:
         """调用上游 LLM，返回 (content, tokens)"""
         result = await self.db.execute(
             select(ModelConfig).where(
@@ -183,9 +172,7 @@ class ChatService:
             )
 
             if response.status_code != 200:
-                logger.error(
-                    f"Upstream error {response.status_code}: {response.text[:500]}"
-                )
+                logger.error(f"Upstream error {response.status_code}: {response.text[:500]}")
                 return f"(error: upstream returned {response.status_code})", 0
 
             data = response.json()
@@ -200,7 +187,7 @@ class ChatService:
 
     async def send_message_stream(
         self, conversation_id: UUID, user: User, content: str
-    ) -> Optional[StreamingResponse]:
+    ) -> StreamingResponse | None:
         """发送消息并以 SSE 流式返回 AI 回复。
 
         通过 StreamForwarder 复用 transport + audit + stats 流水线。
@@ -297,9 +284,7 @@ class ChatService:
             )
             db.add(ai_message)
 
-            result = await db.execute(
-                select(Conversation).where(Conversation.id == conv_id)
-            )
+            result = await db.execute(select(Conversation).where(Conversation.id == conv_id))
             conv = result.scalar_one_or_none()
             if conv and not conv.title and user_content:
                 conv.title = user_content[:50]
@@ -323,9 +308,7 @@ class ChatService:
         """Return a StreamingResponse that yields a single error then [DONE]."""
 
         async def error_generator():
-            error_msg = json.dumps(
-                {"error": {"message": error_message, "type": "service_error"}}
-            )
+            error_msg = json.dumps({"error": {"message": error_message, "type": "service_error"}})
             yield f"data: {error_msg}\n\n"
             yield "data: [DONE]\n\n"
 

@@ -37,10 +37,7 @@ async def list_agent_types(
         select(AgentType).where(AgentType.is_active == True).order_by(AgentType.name)
     )
     types = result.scalars().all()
-    return [
-        {"id": str(t.id), "name": t.name, "is_active": t.is_active}
-        for t in types
-    ]
+    return [{"id": str(t.id), "name": t.name, "is_active": t.is_active} for t in types]
 
 
 @router.post("")
@@ -51,9 +48,7 @@ async def create_agent_type(
 ):
     """Create a new agent type (admin only)."""
     # Check for duplicate name
-    result = await db.execute(
-        select(AgentType).where(AgentType.name == data.name)
-    )
+    result = await db.execute(select(AgentType).where(AgentType.name == data.name))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=409, detail=f"Agent type '{data.name}' already exists")
 
@@ -72,9 +67,7 @@ async def update_agent_type(
     db: AsyncSession = Depends(get_db),
 ):
     """Update an agent type (admin only)."""
-    result = await db.execute(
-        select(AgentType).where(AgentType.id == agent_type_id)
-    )
+    result = await db.execute(select(AgentType).where(AgentType.id == agent_type_id))
     agent_type = result.scalar_one_or_none()
     if not agent_type:
         raise HTTPException(status_code=404, detail="Agent type not found")
@@ -103,9 +96,7 @@ async def delete_agent_type(
     db: AsyncSession = Depends(get_db),
 ):
     """Delete an agent type (admin only)."""
-    result = await db.execute(
-        select(AgentType).where(AgentType.id == agent_type_id)
-    )
+    result = await db.execute(select(AgentType).where(AgentType.id == agent_type_id))
     agent_type = result.scalar_one_or_none()
     if not agent_type:
         raise HTTPException(status_code=404, detail="Agent type not found")

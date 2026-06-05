@@ -1,18 +1,18 @@
 """Base adapter for upstream LLM provider protocol differences."""
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
 class StreamEvent:
     """Parsed result from a single SSE message."""
 
-    text: str = ""           # Incremental text content
-    input_tokens: int = 0    # Input token count (0 if not reported this event)
-    output_tokens: int = 0   # Output token count (0 if not reported this event)
-    done: bool = False       # Whether the stream has ended
-    error: str = ""          # Error message if any
+    text: str = ""  # Incremental text content
+    input_tokens: int = 0  # Input token count (0 if not reported this event)
+    output_tokens: int = 0  # Output token count (0 if not reported this event)
+    done: bool = False  # Whether the stream has ended
+    error: str = ""  # Error message if any
 
 
 class BaseAdapter(ABC):
@@ -43,9 +43,7 @@ class BaseAdapter(ABC):
         """Build request headers including authentication."""
 
     @abstractmethod
-    def build_request_body(
-        self, body: dict, target_model: str, defaults: dict
-    ) -> dict:
+    def build_request_body(self, body: dict, target_model: str, defaults: dict) -> dict:
         """Build the upstream request body.
 
         Injects target_model and applies default temperature/max_tokens

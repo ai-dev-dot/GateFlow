@@ -1,11 +1,12 @@
 from datetime import datetime
-from typing import Optional
+
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.user import User, Role
-from app.utils.security import get_password_hash, verify_password, create_access_token
+from sqlalchemy.orm import selectinload
+
 from app.config import get_settings
+from app.models.user import Role, User
+from app.utils.security import create_access_token, get_password_hash, verify_password
 
 settings = get_settings()
 
@@ -14,7 +15,7 @@ class AuthService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def authenticate_user(self, username: str, password: str) -> Optional[User]:
+    async def authenticate_user(self, username: str, password: str) -> User | None:
         """验证用户凭据，成功则更新 last_login 并返回 User"""
         result = await self.db.execute(
             select(User).where(User.username == username).options(selectinload(User.role))
@@ -54,17 +55,13 @@ class AuthService:
 
     async def init_admin(self) -> None:
         """如果不存在管理员用户，则创建默认管理员"""
-        result = await self.db.execute(
-            select(User).where(User.username == settings.ADMIN_USERNAME)
-        )
+        result = await self.db.execute(select(User).where(User.username == settings.ADMIN_USERNAME))
         admin = result.scalar_one_or_none()
         if admin:
             return
 
         # 确保 admin 角色存在
-        result = await self.db.execute(
-            select(Role).where(Role.name == "admin")
-        )
+        result = await self.db.execute(select(Role).where(Role.name == "admin"))
         admin_role = result.scalar_one_or_none()
         if not admin_role:
             admin_role = Role(name="admin", permissions={"all": True})

@@ -9,7 +9,6 @@
 
 import json
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -17,8 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth_middleware import get_auth_context, AuthContext
-from app.models.audit import AuditLog
+from app.middleware.auth_middleware import AuthContext, get_auth_context
 from app.models.gateway import ModelConfig
 from app.services.audit_service import AuditService
 from app.services.gateway_service import GatewayError, GatewayService
@@ -45,8 +43,8 @@ async def messages(
     """
     try:
         body = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    except Exception as err:
+        raise HTTPException(status_code=400, detail="Invalid JSON body") from err
 
     model_alias = body.get("model")
     if not model_alias:
@@ -71,9 +69,7 @@ async def messages(
     model_config = result.scalar_one_or_none()
 
     if not model_config:
-        raise HTTPException(
-            status_code=404, detail=f"Model not found or inactive: {model_alias}"
-        )
+        raise HTTPException(status_code=404, detail=f"Model not found or inactive: {model_alias}")
 
     upstream_adapter = get_adapter(model_config.provider)
 
@@ -94,9 +90,7 @@ async def messages(
         except GatewayError as e:
             return JSONResponse(
                 status_code=e.status_code,
-                content=upstream_adapter.format_error(
-                    e.status_code, {"detail": e.detail}
-                ),
+                content=upstream_adapter.format_error(e.status_code, {"detail": e.detail}),
             )
     else:
         # Upstream is OpenAI-compatible: bridge the protocol.
@@ -106,18 +100,17 @@ async def messages(
         openai_body = anthropic.to_openai_request(body, model_config.target_model)
         openai_body["stream"] = is_stream
 
+        import httpx
+
         from app.services.provider_key_service import ProviderKeyService
         from app.utils.http_client import get_http_client
-        import httpx
 
         key_service = ProviderKeyService(db)
         provider_key = await key_service.get_available_key(model_config.provider)
         if not provider_key:
             return JSONResponse(
                 status_code=503,
-                content=anthropic.format_error(
-                    503, {"detail": "No available API key"}
-                ),
+                content=anthropic.format_error(503, {"detail": "No available API key"}),
             )
 
         upstream_url = upstream_adapter.build_upstream_url(model_config.target_url)
@@ -132,9 +125,7 @@ async def messages(
         )
 
         # Estimate tokens (use full message body)
-        request_tokens = max(
-            1, sum(len(str(m.get("content", ""))) for m in messages) // 3
-        )
+        request_tokens = max(1, sum(len(str(m.get("content", ""))) for m in messages) // 3)
 
         # Create pending audit log via AuditService (this is the P0-3 fix:
         # previously this path wrote NO audit log)
@@ -159,31 +150,15 @@ async def messages(
             # Streaming bridge: convert OpenAI SSE → Anthropic SSE
             # The transform reads from a buffer that parses OpenAI events and
             # uses anthropic.from_openai_sse_chunk to emit Anthropic SSE.
-
-            # We need a buffer to hold the latest parsed data dict so the
-            # transform callback can call from_openai_sse_chunk.
-            parsed_buffer: dict = {}
-
-            def transform_event_sse(data: dict) -> str:
-                """Receive parsed OpenAI data dict, emit Anthropic SSE string."""
-                return anthropic.from_openai_sse_chunk(data)
-
-            # We can't use a list capture across awaits cleanly in a sync
-            # callback. The bridge needs to parse lines → dicts and emit SSE.
-            # Use a custom emit_sse: but StreamForwarder parses with adapter.
-            # Workaround: parse the data string ourselves in a custom path.
             #
-            # Actually the cleanest way: write a small inline streaming bridge
-            # that uses StreamForwarder's transport/audit/stats but does its
-            # own SSE→SSE conversion. The transport layer (httpx.stream +
-            # audit + key stats) is what we want to share.
-            #
-            # For now, implement the bridge directly but call StreamForwarder's
-            # _save_after_stream to get the audit + key stats update.
+            # The bridge needs to parse lines → dicts and emit SSE.
+            # Write a small inline streaming bridge that uses StreamForwarder's
+            # transport/audit/stats but does its own SSE→SSE conversion.
+            # The transport layer (httpx.stream + audit + key stats) is
+            # what we share.
 
             # ---- Inline streaming bridge (similar to chat_service style) ----
             import time as _time
-            from app.database import async_session as _async_session
 
             start_time = _time.monotonic()
 
@@ -208,9 +183,7 @@ async def messages(
                             error_body = b""
                             async for chunk in upstream_response.aiter_bytes():
                                 error_body += chunk
-                            yield anthropic.error_sse(
-                                f"Upstream returned {status_code}"
-                            )
+                            yield anthropic.error_sse(f"Upstream returned {status_code}")
                             return
 
                         async for chunk in upstream_response.aiter_bytes():
@@ -232,9 +205,7 @@ async def messages(
                                         if usage.get("prompt_tokens"):
                                             input_tokens = usage["prompt_tokens"]
                                         if usage.get("completion_tokens"):
-                                            response_tokens = usage[
-                                                "completion_tokens"
-                                            ]
+                                            response_tokens = usage["completion_tokens"]
                                     # Accumulate text
                                     choices = data.get("choices", [])
                                     if choices:
@@ -299,9 +270,7 @@ async def messages(
                     response_tokens = usage.get("completion_tokens", 0)
                     input_tokens = usage.get("prompt_tokens", 0)
 
-                    anthropic_response = anthropic.from_openai_response(
-                        openai_response
-                    )
+                    anthropic_response = anthropic.from_openai_response(openai_response)
 
                     # Persist audit + key stats
                     forwarder = StreamForwarder(db, upstream_adapter)

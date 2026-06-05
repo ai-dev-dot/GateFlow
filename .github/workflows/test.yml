@@ -28,6 +28,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Lint (ruff)
+        run: |
+          python -m ruff check .
+          python -m ruff format --check .
+
       - name: Run tests
         env:
           # In-memory SQLite is used by conftest.py fixtures; no external DB needed

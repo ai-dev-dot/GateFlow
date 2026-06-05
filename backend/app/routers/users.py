@@ -1,23 +1,35 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from typing import List
 from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.database import get_db
-from app.models import User, Role, Department
-from app.schemas.user import UserCreate, UserUpdate, UserResponse, RoleResponse, DepartmentCreate, DepartmentResponse
 from app.middleware.auth_middleware import require_admin
+from app.models import Department, Role, User
+from app.schemas.user import (
+    DepartmentCreate,
+    DepartmentResponse,
+    RoleResponse,
+    UserCreate,
+    UserResponse,
+    UserUpdate,
+)
 from app.utils.security import get_password_hash
 
 router = APIRouter(prefix="/api/users", tags=["用户管理"])
 
-@router.get("", response_model=List[UserResponse])
+
+@router.get("", response_model=list[UserResponse])
 async def list_users(db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
     result = await db.execute(select(User))
     return result.scalars().all()
 
+
 @router.post("", response_model=UserResponse)
-async def create_user(request: UserCreate, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
+async def create_user(
+    request: UserCreate, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)
+):
     result = await db.execute(select(User).where(User.username == request.username))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="用户名已存在")
@@ -31,17 +43,25 @@ async def create_user(request: UserCreate, db: AsyncSession = Depends(get_db), a
             await db.flush()
         role_id = user_role.id
     user = User(
-        username=request.username, email=request.email,
+        username=request.username,
+        email=request.email,
         hashed_password=get_password_hash(request.password),
-        department_id=request.department_id, role_id=role_id
+        department_id=request.department_id,
+        role_id=role_id,
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
     return user
 
+
 @router.put("/{user_id}", response_model=UserResponse)
-async def update_user(user_id: UUID, request: UserUpdate, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
+async def update_user(
+    user_id: UUID,
+    request: UserUpdate,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -53,8 +73,11 @@ async def update_user(user_id: UUID, request: UserUpdate, db: AsyncSession = Dep
     await db.refresh(user)
     return user
 
+
 @router.delete("/{user_id}")
-async def delete_user(user_id: UUID, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
+async def delete_user(
+    user_id: UUID, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)
+):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -63,18 +86,27 @@ async def delete_user(user_id: UUID, db: AsyncSession = Depends(get_db), admin: 
     await db.commit()
     return {"message": "用户已删除"}
 
-@router.get("/roles", response_model=List[RoleResponse])
+
+@router.get("/roles", response_model=list[RoleResponse])
 async def list_roles(db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
     result = await db.execute(select(Role))
     return result.scalars().all()
 
-@router.get("/departments", response_model=List[DepartmentResponse])
-async def list_departments(db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
+
+@router.get("/departments", response_model=list[DepartmentResponse])
+async def list_departments(
+    db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)
+):
     result = await db.execute(select(Department))
     return result.scalars().all()
 
+
 @router.post("/departments", response_model=DepartmentResponse)
-async def create_department(request: DepartmentCreate, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
+async def create_department(
+    request: DepartmentCreate,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
     department = Department(name=request.name, parent_id=request.parent_id)
     db.add(department)
     await db.commit()
@@ -83,7 +115,12 @@ async def create_department(request: DepartmentCreate, db: AsyncSession = Depend
 
 
 @router.put("/departments/{department_id}", response_model=DepartmentResponse)
-async def update_department(department_id: UUID, request: DepartmentCreate, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
+async def update_department(
+    department_id: UUID,
+    request: DepartmentCreate,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
     result = await db.execute(select(Department).where(Department.id == department_id))
     department = result.scalar_one_or_none()
     if not department:
@@ -94,8 +131,11 @@ async def update_department(department_id: UUID, request: DepartmentCreate, db: 
     await db.refresh(department)
     return department
 
+
 @router.delete("/departments/{department_id}")
-async def delete_department(department_id: UUID, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
+async def delete_department(
+    department_id: UUID, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)
+):
     result = await db.execute(select(Department).where(Department.id == department_id))
     department = result.scalar_one_or_none()
     if not department:

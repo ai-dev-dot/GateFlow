@@ -6,9 +6,6 @@ These tests protect:
 - Total tokens = request + response
 """
 
-import uuid
-from datetime import datetime
-
 import pytest
 from sqlalchemy import select
 
@@ -46,8 +43,12 @@ async def test_record_completion_success(db_session, test_user):
     """200 → status='completed'."""
     service = AuditService(db_session)
     log = await service.create_pending_log(
-        user=test_user, model="gpt-4", provider="openai",
-        path="/v1/chat/completions", request_body=None, is_stream=True,
+        user=test_user,
+        model="gpt-4",
+        provider="openai",
+        path="/v1/chat/completions",
+        request_body=None,
+        is_stream=True,
     )
     await db_session.commit()
 
@@ -70,8 +71,12 @@ async def test_record_completion_failure(db_session, test_user):
     """non-200 → status='failed'."""
     service = AuditService(db_session)
     log = await service.create_pending_log(
-        user=test_user, model="gpt-4", provider="openai",
-        path="/v1/chat/completions", request_body=None, is_stream=False,
+        user=test_user,
+        model="gpt-4",
+        provider="openai",
+        path="/v1/chat/completions",
+        request_body=None,
+        is_stream=False,
     )
     await db_session.commit()
 
@@ -94,8 +99,12 @@ async def test_snapshot_unchanged_after_user_mutation(db_session, test_user):
     """
     service = AuditService(db_session)
     log = await service.create_pending_log(
-        user=test_user, model="gpt-4", provider="openai",
-        path="/v1/chat/completions", request_body=None, is_stream=False,
+        user=test_user,
+        model="gpt-4",
+        provider="openai",
+        path="/v1/chat/completions",
+        request_body=None,
+        is_stream=False,
     )
     await db_session.commit()
     original_username = log.username
@@ -119,8 +128,12 @@ async def test_request_body_truncation(db_session, test_user):
     service = AuditService(db_session)
     big_body = "x" * (200 * 1024)  # 200KB
     log = await service.create_pending_log(
-        user=test_user, model="gpt-4", provider="openai",
-        path="/v1/chat/completions", request_body=big_body, is_stream=False,
+        user=test_user,
+        model="gpt-4",
+        provider="openai",
+        path="/v1/chat/completions",
+        request_body=big_body,
+        is_stream=False,
     )
     await db_session.commit()
     assert len(log.request_body) == service.MAX_LOG_CONTENT_LENGTH

@@ -1,0 +1,43 @@
+[tool.ruff]
+# Match the dominant style in the existing codebase (most lines ~95-100 chars)
+line-length = 100
+target-version = "py313"
+# Don't lint the auto-generated __pycache__ or virtualenv
+extend-exclude = [
+    "venv",
+    ".venv",
+    "__pycache__",
+    "migrations",
+    "alembic/versions",
+]
+
+[tool.ruff.lint]
+# E/W: pycodestyle errors/warnings
+# F: pyflakes (unused imports, undefined names, etc.)
+# I: isort (import sorting)
+# B: flake8-bugbear (likely bugs)
+# UP: pyupgrade (modern Python syntax)
+# SIM: flake8-simplify (suggestions for simpler code)
+select = ["E", "W", "F", "I", "B", "UP", "SIM"]
+# Allow common patterns that are fine in this codebase
+ignore = [
+    "E501",  # line too long (we use formatter for this; manual is fine)
+    "B008",  # function call in default argument (FastAPI uses Depends() this way)
+    # Pre-existing style: SQLAlchemy `Column == True/False/None` works correctly
+    # in ORM (generates IS TRUE / IS FALSE / IS NULL). Refactoring 200+ call
+    # sites is out of scope for the lint-setup PR. Revisit in a dedicated
+    # style cleanup commit.
+    "E711",
+    "E712",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests can have long lines, magic numbers, unused fixtures
+"tests/**/*.py" = ["E402", "B011"]
+# __init__.py can have unused imports (re-exports)
+"__init__.py" = ["F401"]
+
+[tool.ruff.format]
+# Match Black's defaults
+quote-style = "double"
+indent-style = "space"

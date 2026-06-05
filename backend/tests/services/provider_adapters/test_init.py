@@ -1,10 +1,9 @@
 """Tests for adapter factory (get_adapter, register_adapter)."""
 
-import pytest
 from app.services.provider_adapters import get_adapter, register_adapter
-from app.services.provider_adapters.openai_adapter import OpenAIAdapter
 from app.services.provider_adapters.anthropic_adapter import AnthropicAdapter
 from app.services.provider_adapters.base import BaseAdapter
+from app.services.provider_adapters.openai_adapter import OpenAIAdapter
 
 
 class TestGetAdapter:
@@ -64,4 +63,5 @@ class TestRegisterAdapter:
     def teardown_method(self):
         # Clean up: re-register to avoid polluting other tests
         from app.services.provider_adapters import _adapters
+
         _adapters.pop("custom", None)

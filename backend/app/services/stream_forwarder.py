@@ -24,7 +24,6 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 import httpx
@@ -32,7 +31,6 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import async_session
 from app.models.audit import AuditLog
 from app.services.provider_adapters.base import BaseAdapter, StreamEvent
 from app.services.provider_key_service import ProviderKeyService
@@ -105,9 +103,9 @@ class StreamForwarder:
         audit_log: AuditLog,
         provider_key_id: UUID,
         request_tokens: int,
-        emit_sse: Optional[EmitSSE] = None,
+        emit_sse: EmitSSE | None = None,
         accumulate_text: bool = False,
-        on_complete: Optional[OnComplete] = None,
+        on_complete: OnComplete | None = None,
     ) -> StreamingResponse:
         """Stream upstream to client. Persist audit + key stats when done.
 
@@ -155,9 +153,7 @@ class StreamForwarder:
                         async for chunk in upstream_response.aiter_bytes():
                             error_body += chunk
                         error_text = error_body.decode("utf-8", errors="replace")
-                        logger.warning(
-                            f"Upstream error {status_code}: {error_text[:500]}"
-                        )
+                        logger.warning(f"Upstream error {status_code}: {error_text[:500]}")
                         yield adapter.error_sse(f"Upstream returned {status_code}")
                         return
 
@@ -239,7 +235,7 @@ class StreamForwarder:
         input_tokens: int,
         latency_ms: int,
         full_content: str,
-        on_complete: Optional[OnComplete],
+        on_complete: OnComplete | None,
     ) -> None:
         """Update audit log + key stats in a fresh session.
 
@@ -252,12 +248,11 @@ class StreamForwarder:
             factory = self._session_factory
             if factory is None:
                 from app.database import async_session as _default_factory
+
                 factory = _default_factory
 
             async with factory() as db:
-                result = await db.execute(
-                    select(AuditLog).where(AuditLog.id == audit_log_id)
-                )
+                result = await db.execute(select(AuditLog).where(AuditLog.id == audit_log_id))
                 audit_log = result.scalar_one_or_none()
                 if audit_log:
                     audit_log.status = "completed" if status_code == 200 else "failed"

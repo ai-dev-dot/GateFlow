@@ -1,7 +1,9 @@
 """Tests for AnthropicAdapter."""
 
 import json
+
 import pytest
+
 from app.services.provider_adapters.anthropic_adapter import AnthropicAdapter
 
 
@@ -12,10 +14,16 @@ def adapter():
 
 class TestBuildUpstreamUrl:
     def test_appends_messages(self, adapter):
-        assert adapter.build_upstream_url("https://api.anthropic.com/v1") == "https://api.anthropic.com/v1/messages"
+        assert (
+            adapter.build_upstream_url("https://api.anthropic.com/v1")
+            == "https://api.anthropic.com/v1/messages"
+        )
 
     def test_strips_trailing_slash(self, adapter):
-        assert adapter.build_upstream_url("https://api.anthropic.com/v1/") == "https://api.anthropic.com/v1/messages"
+        assert (
+            adapter.build_upstream_url("https://api.anthropic.com/v1/")
+            == "https://api.anthropic.com/v1/messages"
+        )
 
 
 class TestBuildHeaders:
@@ -157,6 +165,7 @@ class TestParseStreamEvent:
 class TestToOpenaiSse:
     def test_text_event(self, adapter):
         from app.services.provider_adapters.base import StreamEvent
+
         event = StreamEvent(text="Hi")
         result = adapter.to_openai_sse(event)
         assert result.startswith("data: ")
@@ -165,12 +174,14 @@ class TestToOpenaiSse:
 
     def test_done_event(self, adapter):
         from app.services.provider_adapters.base import StreamEvent
+
         event = StreamEvent(done=True)
         result = adapter.to_openai_sse(event)
         assert "data: [DONE]" in result
 
     def test_error_event(self, adapter):
         from app.services.provider_adapters.base import StreamEvent
+
         event = StreamEvent(error="Something failed")
         result = adapter.to_openai_sse(event)
         assert result.startswith("data: ")
@@ -179,6 +190,7 @@ class TestToOpenaiSse:
 
     def test_empty_event(self, adapter):
         from app.services.provider_adapters.base import StreamEvent
+
         event = StreamEvent()
         result = adapter.to_openai_sse(event)
         assert result == ""

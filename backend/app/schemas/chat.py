@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -26,7 +25,7 @@ class ConversationCreate(BaseModel):
 class ConversationResponse(BaseModel):
     id: UUID
     model: str
-    title: Optional[str] = None
+    title: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

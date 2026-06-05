@@ -1,7 +1,9 @@
 """Tests for OpenAIAdapter."""
 
 import json
+
 import pytest
+
 from app.services.provider_adapters.openai_adapter import OpenAIAdapter
 
 
@@ -12,10 +14,16 @@ def adapter():
 
 class TestBuildUpstreamUrl:
     def test_appends_chat_completions(self, adapter):
-        assert adapter.build_upstream_url("https://api.openai.com/v1") == "https://api.openai.com/v1/chat/completions"
+        assert (
+            adapter.build_upstream_url("https://api.openai.com/v1")
+            == "https://api.openai.com/v1/chat/completions"
+        )
 
     def test_strips_trailing_slash(self, adapter):
-        assert adapter.build_upstream_url("https://api.openai.com/v1/") == "https://api.openai.com/v1/chat/completions"
+        assert (
+            adapter.build_upstream_url("https://api.openai.com/v1/")
+            == "https://api.openai.com/v1/chat/completions"
+        )
 
 
 class TestBuildHeaders:
@@ -141,6 +149,7 @@ class TestErrorSse:
 class TestToOpenaiSse:
     def test_text_event(self, adapter):
         from app.services.provider_adapters.base import StreamEvent
+
         event = StreamEvent(text="Hi")
         result = adapter.to_openai_sse(event)
         assert result.startswith("data: ")
@@ -149,12 +158,14 @@ class TestToOpenaiSse:
 
     def test_done_event(self, adapter):
         from app.services.provider_adapters.base import StreamEvent
+
         event = StreamEvent(done=True)
         result = adapter.to_openai_sse(event)
         assert "data: [DONE]" in result
 
     def test_empty_event(self, adapter):
         from app.services.provider_adapters.base import StreamEvent
+
         event = StreamEvent()
         result = adapter.to_openai_sse(event)
         assert result == ""

@@ -7,7 +7,6 @@ common stream transport / audit / stats pipeline.
 import json
 import logging
 import time
-from typing import Optional
 
 import httpx
 from fastapi import Request
@@ -21,8 +20,8 @@ from app.models.audit import AuditLog
 from app.models.gateway import ModelConfig
 from app.models.user import User
 from app.services.audit_service import AuditService
-from app.services.provider_key_service import ProviderKeyService
 from app.services.provider_adapters.base import BaseAdapter
+from app.services.provider_key_service import ProviderKeyService
 from app.services.stream_forwarder import StreamForwarder
 from app.utils.http_client import get_http_client
 
@@ -44,8 +43,8 @@ class GatewayService:
         is_stream: bool,
         request: Request,
         path: str = "/v1/chat/completions",
-        api_key_id: Optional[str] = None,
-        agent_type: Optional[str] = None,
+        api_key_id: str | None = None,
+        agent_type: str | None = None,
     ):
         """
         1. Get an available provider key
@@ -65,9 +64,7 @@ class GatewayService:
         # 快照：client api key 的 name（请求发生时的状态，之后不改）
         api_key_name = None
         if api_key_id:
-            api_key_name = await self.db.scalar(
-                select(APIKey.name).where(APIKey.id == api_key_id)
-            )
+            api_key_name = await self.db.scalar(select(APIKey.name).where(APIKey.id == api_key_id))
 
         # Estimate request tokens from full body
         request_tokens = self._estimate_request_tokens(request_body)
@@ -173,9 +170,7 @@ class GatewayService:
         # Persist audit + key stats in new session (same pattern as StreamForwarder)
         try:
             async with async_session() as db:
-                result = await db.execute(
-                    select(AuditLog).where(AuditLog.id == audit_log.id)
-                )
+                result = await db.execute(select(AuditLog).where(AuditLog.id == audit_log.id))
                 log = result.scalar_one_or_none()
                 if log:
                     audit_service = AuditService(db)

@@ -1,22 +1,23 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
 from app.database import get_db
-from app.models import User, APIKey
+from app.models import APIKey, User
 from app.utils.security import decode_access_token
 
 security = HTTPBearer(auto_error=False)
 
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> User:
     """Get current user supporting both JWT Token and API Key authentication"""
 
@@ -72,6 +73,7 @@ async def get_current_user(
 
     return user
 
+
 async def require_admin(user: User = Depends(get_current_user)) -> User:
     """Require admin role"""
     if user.role.name != "admin":
@@ -82,9 +84,10 @@ async def require_admin(user: User = Depends(get_current_user)) -> User:
 @dataclass
 class AuthContext:
     """Authentication context with optional API Key tracking info."""
+
     user: User
-    api_key_id: Optional[UUID] = None
-    agent_type: Optional[str] = None  # From APIKey.agent_type.name
+    api_key_id: UUID | None = None
+    agent_type: str | None = None  # From APIKey.agent_type.name
 
 
 async def get_auth_context(
@@ -115,7 +118,7 @@ async def get_auth_context(
         await db.commit()
 
         api_key_id = api_key.id
-        if hasattr(api_key, 'agent_type') and api_key.agent_type:
+        if hasattr(api_key, "agent_type") and api_key.agent_type:
             agent_type = api_key.agent_type.name
 
         result = await db.execute(

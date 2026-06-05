@@ -4,10 +4,7 @@
 让 service 层和 router 层测试可以跑起来（不需要外部 PostgreSQL）。
 """
 
-import asyncio
-import uuid
-from datetime import datetime
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio
@@ -21,15 +18,13 @@ from sqlalchemy.pool import StaticPool
 
 from app.models import Base
 from app.models.user import Department, Role, User
-from app.models.agent_type import AgentType
 from app.services.provider_adapters import (
     AnthropicAdapter,
     OpenAIAdapter,
-    get_adapter,
 )
 
-
 # ---------- Provider adapter fixtures ----------
+
 
 @pytest.fixture
 def openai_adapter():
@@ -42,6 +37,7 @@ def anthropic_adapter():
 
 
 # ---------- DB fixtures (in-memory SQLite) ----------
+
 
 @pytest_asyncio.fixture
 async def db_engine():
@@ -66,14 +62,13 @@ async def db_engine():
 @pytest_asyncio.fixture
 async def db_session(db_engine) -> AsyncGenerator[AsyncSession, None]:
     """Single async session for a test. Caller responsible for commit/rollback."""
-    async_session_maker = async_sessionmaker(
-        db_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    async_session_maker = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
     async with async_session_maker() as session:
         yield session
 
 
 # ---------- Domain fixtures ----------
+
 
 @pytest_asyncio.fixture
 async def test_user(db_session: AsyncSession) -> User:

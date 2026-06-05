@@ -23,14 +23,10 @@ class AuditLog(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     status = Column(String(20), default="pending", nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
-    user_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
-    )
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     username = Column(String(50), nullable=False)
     department = Column(String(100), nullable=True)
-    api_key_id = Column(
-        UUID(as_uuid=True), ForeignKey("api_keys.id"), nullable=True
-    )
+    api_key_id = Column(UUID(as_uuid=True), ForeignKey("api_keys.id"), nullable=True)
     api_key_name = Column(String(100), nullable=True)  # 快照：请求发生时 client key 的 name
     agent_type = Column(String(50), nullable=True)
     model = Column(String(100), nullable=False)

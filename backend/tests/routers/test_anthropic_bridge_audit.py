@@ -19,7 +19,6 @@ from app.models.gateway import ModelConfig
 from app.models.provider_key import ProviderAPIKey
 from app.services.audit_service import AuditService
 from app.services.provider_adapters import OpenAIAdapter
-from app.services.provider_key_service import ProviderKeyService
 from app.services.stream_forwarder import StreamForwarder
 
 
@@ -48,14 +47,13 @@ class FakeHttpxClient:
 
 def _session_factory(db_session):
     from sqlalchemy.ext.asyncio import async_sessionmaker
+
     engine = db_session.bind
     return async_sessionmaker(engine, expire_on_commit=False)
 
 
 @pytest.mark.asyncio
-async def test_anthropic_bridge_path_creates_audit_log(
-    db_session, test_user
-):
+async def test_anthropic_bridge_path_creates_audit_log(db_session, test_user):
     """P0-3 regression: Anthropic→OpenAI bridge MUST create audit log row.
 
     Verifies the same code path the bridge router uses:

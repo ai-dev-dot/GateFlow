@@ -1,8 +1,7 @@
 from datetime import date, datetime, time
-from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select, func, null
+from sqlalchemy import func, null, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit import AuditLog
@@ -25,9 +24,9 @@ class UsageService:
     async def get_summary(
         self,
         dimension: str = "user",
-        start_date: Optional[date] = None,
-        end_date: Optional[date] = None,
-        user_id: Optional[UUID] = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        user_id: UUID | None = None,
     ) -> list:
         """按维度聚合用量统计（实时查 AuditLog）
 
@@ -141,6 +140,8 @@ class UsageService:
         if end_date:
             query = query.where(AuditLog.timestamp < datetime.combine(end_date, time.max))
 
-        query = query.group_by(func.date(AuditLog.timestamp)).order_by(func.date(AuditLog.timestamp))
+        query = query.group_by(func.date(AuditLog.timestamp)).order_by(
+            func.date(AuditLog.timestamp)
+        )
         result = await self.db.execute(query)
         return result.all()

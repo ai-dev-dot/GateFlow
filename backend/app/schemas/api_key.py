@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional, List
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -7,17 +6,17 @@ from pydantic import BaseModel, ConfigDict
 
 class APIKeyCreate(BaseModel):
     name: str
-    permissions: List[str] = []
+    permissions: list[str] = []
     rate_limit: int = 60
-    expires_at: Optional[datetime] = None
-    agent_type_id: Optional[UUID] = None
+    expires_at: datetime | None = None
+    agent_type_id: UUID | None = None
 
 
 class APIKeyUpdate(BaseModel):
-    name: Optional[str] = None
-    permissions: Optional[List[str]] = None
-    rate_limit: Optional[int] = None
-    is_active: Optional[bool] = None
+    name: str | None = None
+    permissions: list[str] | None = None
+    rate_limit: int | None = None
+    is_active: bool | None = None
 
 
 class APIKeyResponse(BaseModel):
@@ -26,10 +25,10 @@ class APIKeyResponse(BaseModel):
     id: UUID
     name: str
     key: str
-    permissions: Optional[List[str]] = None
+    permissions: list[str] | None = None
     rate_limit: int
-    expires_at: Optional[datetime] = None
+    expires_at: datetime | None = None
     is_active: bool
-    agent_type_id: Optional[UUID] = None
+    agent_type_id: UUID | None = None
     created_at: datetime
-    last_used_at: Optional[datetime] = None
+    last_used_at: datetime | None = None

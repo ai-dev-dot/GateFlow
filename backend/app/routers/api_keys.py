@@ -1,18 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from typing import List
 from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.database import get_db
-from app.models import User, APIKey
-from app.models.api_key import generate_api_key
-from app.schemas.api_key import APIKeyCreate, APIKeyUpdate, APIKeyResponse
 from app.middleware.auth_middleware import get_current_user
+from app.models import APIKey, User
+from app.models.api_key import generate_api_key
+from app.schemas.api_key import APIKeyCreate, APIKeyResponse, APIKeyUpdate
 
 router = APIRouter(prefix="/api/api-keys", tags=["API Key 管理"])
 
 
-@router.get("", response_model=List[APIKeyResponse])
+@router.get("", response_model=list[APIKeyResponse])
 async def list_api_keys(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -49,9 +50,7 @@ async def update_api_key(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(APIKey).where(APIKey.id == key_id, APIKey.user_id == user.id)
-    )
+    result = await db.execute(select(APIKey).where(APIKey.id == key_id, APIKey.user_id == user.id))
     api_key = result.scalar_one_or_none()
     if not api_key:
         raise HTTPException(status_code=404, detail="API Key 不存在")
@@ -69,9 +68,7 @@ async def delete_api_key(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(APIKey).where(APIKey.id == key_id, APIKey.user_id == user.id)
-    )
+    result = await db.execute(select(APIKey).where(APIKey.id == key_id, APIKey.user_id == user.id))
     api_key = result.scalar_one_or_none()
     if not api_key:
         raise HTTPException(status_code=404, detail="API Key 不存在")

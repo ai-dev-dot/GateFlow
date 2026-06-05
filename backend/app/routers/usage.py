@@ -1,5 +1,4 @@
 from datetime import date
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,11 +13,12 @@ router = APIRouter(prefix="/api/usage", tags=["用量统计"])
 
 # ---- 管理员接口 ----
 
+
 @router.get("/summary")
 async def get_usage_summary(
     dimension: str = Query("user", description="聚合维度: user/department/model"),
-    start_date: Optional[date] = Query(None, description="开始日期"),
-    end_date: Optional[date] = Query(None, description="结束日期"),
+    start_date: date | None = Query(None, description="开始日期"),
+    end_date: date | None = Query(None, description="结束日期"),
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -34,8 +34,8 @@ async def get_usage_summary(
 
 @router.get("/trend")
 async def get_usage_trend(
-    start_date: Optional[date] = Query(None, description="开始日期"),
-    end_date: Optional[date] = Query(None, description="结束日期"),
+    start_date: date | None = Query(None, description="开始日期"),
+    end_date: date | None = Query(None, description="结束日期"),
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -60,11 +60,12 @@ async def get_usage_trend(
 
 # ---- 普通用户接口（仅自身数据）----
 
+
 @router.get("/my-summary")
 async def get_my_usage_summary(
     dimension: str = Query("model", description="聚合维度: model/api_key"),
-    start_date: Optional[date] = Query(None, description="开始日期"),
-    end_date: Optional[date] = Query(None, description="结束日期"),
+    start_date: date | None = Query(None, description="开始日期"),
+    end_date: date | None = Query(None, description="结束日期"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -81,8 +82,8 @@ async def get_my_usage_summary(
 
 @router.get("/my-trend")
 async def get_my_usage_trend(
-    start_date: Optional[date] = Query(None, description="开始日期"),
-    end_date: Optional[date] = Query(None, description="结束日期"),
+    start_date: date | None = Query(None, description="开始日期"),
+    end_date: date | None = Query(None, description="结束日期"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

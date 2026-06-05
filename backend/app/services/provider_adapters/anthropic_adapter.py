@@ -23,9 +23,7 @@ class AnthropicAdapter(BaseAdapter):
             "content-type": "application/json",
         }
 
-    def build_request_body(
-        self, body: dict, target_model: str, defaults: dict
-    ) -> dict:
+    def build_request_body(self, body: dict, target_model: str, defaults: dict) -> dict:
         forward_body = {**body, "model": target_model}
         # max_tokens is required for Anthropic
         if "max_tokens" not in forward_body and defaults.get("max_tokens"):
@@ -126,9 +124,7 @@ class AnthropicAdapter(BaseAdapter):
         if event.done:
             return "data: [DONE]\n\n"
         if event.error:
-            error_data = json.dumps(
-                {"error": {"message": event.error, "type": "upstream_error"}}
-            )
+            error_data = json.dumps({"error": {"message": event.error, "type": "upstream_error"}})
             return f"data: {error_data}\n\n"
         if event.text:
             chunk = {
@@ -215,24 +211,28 @@ class AnthropicAdapter(BaseAdapter):
 
         # If this is the first chunk with role, emit message_start
         if choices and choices[0].get("delta", {}).get("role") == "assistant":
-            start_data = json.dumps({
-                "type": "message_start",
-                "message": {
-                    "id": f"msg_{msg_id}" if msg_id else f"msg_{uuid.uuid4().hex[:24]}",
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [],
-                    "model": model,
-                    "usage": {"input_tokens": 0, "output_tokens": 0},
-                },
-            })
+            start_data = json.dumps(
+                {
+                    "type": "message_start",
+                    "message": {
+                        "id": f"msg_{msg_id}" if msg_id else f"msg_{uuid.uuid4().hex[:24]}",
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [],
+                        "model": model,
+                        "usage": {"input_tokens": 0, "output_tokens": 0},
+                    },
+                }
+            )
             events += f"event: message_start\ndata: {start_data}\n\n"
             # Emit content_block_start
-            block_start = json.dumps({
-                "type": "content_block_start",
-                "index": 0,
-                "content_block": {"type": "text", "text": ""},
-            })
+            block_start = json.dumps(
+                {
+                    "type": "content_block_start",
+                    "index": 0,
+                    "content_block": {"type": "text", "text": ""},
+                }
+            )
             events += f"event: content_block_start\ndata: {block_start}\n\n"
 
         # Emit content from delta
@@ -240,11 +240,13 @@ class AnthropicAdapter(BaseAdapter):
             delta = choices[0].get("delta", {})
             content = delta.get("content")
             if content:
-                delta_data = json.dumps({
-                    "type": "content_block_delta",
-                    "index": 0,
-                    "delta": {"type": "text_delta", "text": content},
-                })
+                delta_data = json.dumps(
+                    {
+                        "type": "content_block_delta",
+                        "index": 0,
+                        "delta": {"type": "text_delta", "text": content},
+                    }
+                )
                 events += f"event: content_block_delta\ndata: {delta_data}\n\n"
 
         # If finish_reason is set, emit stop events
@@ -256,22 +258,26 @@ class AnthropicAdapter(BaseAdapter):
             output_tokens = 0
             if usage:
                 output_tokens = usage.get("completion_tokens", 0)
-            msg_delta = json.dumps({
-                "type": "message_delta",
-                "delta": {"stop_reason": "end_turn"},
-                "usage": {"output_tokens": output_tokens},
-            })
+            msg_delta = json.dumps(
+                {
+                    "type": "message_delta",
+                    "delta": {"stop_reason": "end_turn"},
+                    "usage": {"output_tokens": output_tokens},
+                }
+            )
             events += f"event: message_delta\ndata: {msg_delta}\n\n"
             # message_stop
             events += f"event: message_stop\ndata: {json.dumps({'type': 'message_stop'})}\n\n"
 
         # If usage is in final chunk (no choices), emit token info
         if usage and not choices:
-            msg_delta = json.dumps({
-                "type": "message_delta",
-                "delta": {"stop_reason": "end_turn"},
-                "usage": {"output_tokens": usage.get("completion_tokens", 0)},
-            })
+            msg_delta = json.dumps(
+                {
+                    "type": "message_delta",
+                    "delta": {"stop_reason": "end_turn"},
+                    "usage": {"output_tokens": usage.get("completion_tokens", 0)},
+                }
+            )
             events += f"event: message_delta\ndata: {msg_delta}\n\n"
             events += f"event: message_stop\ndata: {json.dumps({'type': 'message_stop'})}\n\n"
 

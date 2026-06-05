@@ -1,15 +1,15 @@
 from datetime import datetime
-from typing import Any, Optional, List
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-
 # --- Department ---
+
 
 class DepartmentCreate(BaseModel):
     name: str
-    parent_id: Optional[UUID] = None
+    parent_id: UUID | None = None
 
 
 class DepartmentResponse(BaseModel):
@@ -17,34 +17,36 @@ class DepartmentResponse(BaseModel):
 
     id: UUID
     name: str
-    parent_id: Optional[UUID] = None
+    parent_id: UUID | None = None
 
 
 # --- Role ---
+
 
 class RoleResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     name: str
-    permissions: Optional[Any] = None
+    permissions: Any | None = None
 
 
 # --- User ---
+
 
 class UserCreate(BaseModel):
     username: str
     email: str
     password: str
-    department_id: Optional[UUID] = None
-    role_id: Optional[UUID] = None
+    department_id: UUID | None = None
+    role_id: UUID | None = None
 
 
 class UserUpdate(BaseModel):
-    email: Optional[str] = None
-    department_id: Optional[UUID] = None
-    role_id: Optional[UUID] = None
-    is_active: Optional[bool] = None
+    email: str | None = None
+    department_id: UUID | None = None
+    role_id: UUID | None = None
+    is_active: bool | None = None
 
 
 class UserResponse(BaseModel):
@@ -53,8 +55,8 @@ class UserResponse(BaseModel):
     id: UUID
     username: str
     email: str
-    department_id: Optional[UUID] = None
-    role_id: Optional[UUID] = None
+    department_id: UUID | None = None
+    role_id: UUID | None = None
     is_active: bool
     created_at: datetime
-    last_login: Optional[datetime] = None
+    last_login: datetime | None = None

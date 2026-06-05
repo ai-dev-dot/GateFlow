@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -15,11 +14,11 @@ router = APIRouter(prefix="/api/audit", tags=["审计日志"])
 
 @router.get("/logs")
 async def get_audit_logs(
-    user_id: Optional[UUID] = Query(None, description="按用户 ID 筛选"),
-    department: Optional[str] = Query(None, description="按部门筛选"),
-    model: Optional[str] = Query(None, description="按模型筛选"),
-    start_time: Optional[datetime] = Query(None, description="开始时间"),
-    end_time: Optional[datetime] = Query(None, description="结束时间"),
+    user_id: UUID | None = Query(None, description="按用户 ID 筛选"),
+    department: str | None = Query(None, description="按部门筛选"),
+    model: str | None = Query(None, description="按模型筛选"),
+    start_time: datetime | None = Query(None, description="开始时间"),
+    end_time: datetime | None = Query(None, description="结束时间"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     current_user: User = Depends(get_current_user),

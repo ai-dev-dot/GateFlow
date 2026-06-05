@@ -1,22 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from typing import List
 from uuid import UUID
 
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.database import get_db
+from app.middleware.auth_middleware import get_current_user, require_admin
 from app.models import ModelConfig
 from app.schemas.gateway import (
     ModelConfigCreate,
-    ModelConfigUpdate,
     ModelConfigResponse,
+    ModelConfigUpdate,
 )
-from app.middleware.auth_middleware import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/gateway/models", tags=["模型配置管理"])
 
 
-@router.get("", response_model=List[ModelConfigResponse])
+@router.get("", response_model=list[ModelConfigResponse])
 async def list_model_configs(
     db: AsyncSession = Depends(get_db),
     _user=Depends(get_current_user),
@@ -56,9 +56,7 @@ async def update_model_config(
     _admin=Depends(require_admin),
 ):
     """更新模型配置（管理员）"""
-    result = await db.execute(
-        select(ModelConfig).where(ModelConfig.id == model_id)
-    )
+    result = await db.execute(select(ModelConfig).where(ModelConfig.id == model_id))
     model_config = result.scalar_one_or_none()
     if not model_config:
         raise HTTPException(status_code=404, detail="模型配置不存在")
@@ -77,9 +75,7 @@ async def delete_model_config(
     _admin=Depends(require_admin),
 ):
     """删除模型配置（管理员）"""
-    result = await db.execute(
-        select(ModelConfig).where(ModelConfig.id == model_id)
-    )
+    result = await db.execute(select(ModelConfig).where(ModelConfig.id == model_id))
     model_config = result.scalar_one_or_none()
     if not model_config:
         raise HTTPException(status_code=404, detail="模型配置不存在")
