@@ -50,6 +50,9 @@
 - 重写 `CONTRIBUTING.md`：明确说明单人维护、不接受代码贡献
 - `README.md` 贡献指南段改为指向新 CONTRIBUTING.md 的简短说明
 - `SECURITY.md` 软化响应时间承诺（无 SLA），补充 Provider API Key 加密 + audit log body 加密两条已知安全考量
+
+### Removed
+- **P1-7 死代码**：`AuditService.MAX_LOG_CONTENT_LENGTH` (100KB) 字段 + `create_pending_log` 内部截断逻辑删除。所有 call site (gateway_service / chat_service / anthropic_forward) 调用前已经 `[:2000]` 截到 2KB，100KB 内部上限永远到不了
 - 修复 auth 中间件懒加载与 chat/gateway 流式保存的 race condition（AI 消息"消失"问题）
 - 修复测试发现的 7 个 bug
 

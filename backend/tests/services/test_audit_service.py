@@ -123,35 +123,32 @@ async def test_snapshot_unchanged_after_user_mutation(db_session, test_user):
 
 
 @pytest.mark.asyncio
-async def test_request_body_truncation(db_session, test_user, monkeypatch):
-    """Body longer than 100KB gets truncated to MAX_LOG_CONTENT_LENGTH.
+async def test_request_body_passed_through_unchanged(db_session, test_user, monkeypatch):
+    """P1-7: AuditService no longer truncates the request body internally.
 
-    With AUDIT_LOG_FULL_BODY=true, the truncated body is Fernet-encrypted
-    before storage. Fernet uses base64 + HMAC overhead, so the persisted
-    ciphertext is ~36% larger than plaintext. We assert the semantic
-    invariant instead: the decrypted body equals the truncated plaintext.
+    Every caller pre-truncates to ~2KB before calling create_pending_log, so
+    the historical 100KB internal ceiling was unreachable dead code. The
+    service now stores the body verbatim (encrypting it if
+    AUDIT_LOG_FULL_BODY=true).
     """
     from app.config import get_settings
 
     monkeypatch.setattr(get_settings(), "AUDIT_LOG_FULL_BODY", True)
 
     service = AuditService(db_session)
-    big_body = "x" * (200 * 1024)  # 200KB
+    body = "x" * 1500  # under both old 2KB caller cap and old 100KB ceiling
     log = await service.create_pending_log(
         user=test_user,
         model="gpt-4",
         provider="openai",
         path="/v1/chat/completions",
-        request_body=big_body,
+        request_body=body,
         is_stream=False,
     )
     await db_session.commit()
-    assert log.request_body != big_body, "encrypted, not plaintext"
-    # Round-trip decrypts back to the truncated (not original) body —
-    # this is the actual contract we care about.
     decrypted = service.decrypt_request_body(log.request_body)
-    assert decrypted == big_body[: service.MAX_LOG_CONTENT_LENGTH]
-    assert len(decrypted) == service.MAX_LOG_CONTENT_LENGTH
+    assert decrypted == body, "body must round-trip unchanged"
+    assert len(decrypted) == 1500
 
 
 @pytest.mark.asyncio
@@ -241,7 +238,6 @@ async def test_full_body_false_drops_encrypted_body(db_session, test_user, monke
 async def test_record_admin_access_writes_meta_audit(db_session, admin_user, monkeypatch):
     """When an admin views a log body, a new AuditLog row is created with
     path='/admin/audit-access' recording the action."""
-    from sqlalchemy import select
     from app.config import get_settings
 
     monkeypatch.setattr(get_settings(), "AUDIT_LOG_FULL_BODY", True)
