@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}我的用量 — GateFlow{% endblock %}
+{% block nav_my_usage %}active{% endblock %}
+{% block header_title %}我的用量{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <div class="grid grid-cols-2 gap-4 max-w-xl">
+    <div class="bg-white rounded-lg border border-gray-200 p-4">
+      <div class="text-xs text-gray-500 mb-1">本月请求数</div>
+      <div id="stat-requests" class="text-2xl font-semibold">—</div>
+    </div>
+    <div class="bg-white rounded-lg border border-gray-200 p-4">
+      <div class="text-xs text-gray-500 mb-1">本月 Token 数</div>
+      <div id="stat-tokens" class="text-2xl font-semibold">—</div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="bg-white rounded-lg border border-gray-200 p-4">
+      <h3 class="text-sm font-semibold text-gray-700 mb-3">本月用量趋势</h3>
+      <div id="chart-trend" style="height: 300px;"></div>
+    </div>
+    <div class="bg-white rounded-lg border border-gray-200 p-4">
+      <h3 class="text-sm font-semibold text-gray-700 mb-3">模型用量占比</h3>
+      <div id="chart-model-pie" style="height: 300px;"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadMyUsage() {
+  try {
+    const res = await fetch('/api/usage/my-summary', { credentials: 'same-origin' });
+    const data = await res.json();
+    document.getElementById('stat-requests').textContent = (data.total_requests ?? data.request_count ?? 0).toLocaleString();
+    document.getElementById('stat-tokens').textContent = (data.total_tokens ?? 0).toLocaleString();
+  } catch {}
+
+  // Trend line chart
+  try {
+    const res = await fetch('/api/usage/my-trend', { credentials: 'same-origin' });
+    const data = await res.json();
+    const items = data.items || data;
+    if (items && items.length) {
+      const chart = echarts.init(document.getElementById('chart-trend'));
+      chart.setOption({
+        tooltip: { trigger: 'axis' },
+        xAxis: { type: 'category', data: items.map(i => i.date || i.day) },
+        yAxis: { type: 'value' },
+        series: [{
+          type: 'line', areaStyle: { opacity: 0.15 },
+          data: items.map(i => i.total_tokens || 0),
+          itemStyle: { color: '#3b82f6' },
+          smooth: true,
+        }],
+      });
+      window.addEventListener('resize', () => chart.resize());
+    }
+  } catch {}
+
+  // Model pie chart
+  try {
+    const res = await fetch('/api/usage/my-summary?dimension=model', { credentials: 'same-origin' });
+    const data = await res.json();
+    const items = data.items || data;
+    if (items && items.length) {
+      const chart = echarts.init(document.getElementById('chart-model-pie'));
+      chart.setOption({
+        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+        series: [{
+          type: 'pie', radius: ['40%', '70%'],
+          data: items.map(i => ({ name: i.model || i.alias, value: i.total_tokens || 0 })),
+          label: { show: true, formatter: '{b}\n{d}%' },
+        }],
+      });
+      window.addEventListener('resize', () => chart.resize());
+    }
+  } catch {}
+}
+
+loadMyUsage();
+</script>
+{% endblock %}

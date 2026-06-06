@@ -3,6 +3,13 @@
 > 日期：2026-06-05
 > 触发：2026-06-05 全量 eng review（架构 + 代码质量 + 测试 + 性能四维）
 > 上游报告：`~/.gstack/projects/ai-dev-dot-GateFlow/eng-review-2026-06-05.md`
+>
+> **2026-06-06 更新：** 前端已从 React 迁移到 Jinja2 + htmx + Tailwind CSS。
+> - `frontend/` 目录已删除，Node.js 构建链已移除
+> - 前端测试相关项（P2-6 中的 vitest/RTL）已不适用
+> - 新增 10 个页面路由测试（`tests/routers/test_pages.py`）
+> - 项目结构已扁平化（`backend/` 嵌套消除）
+> - 详见 `2026-06-06-frontend-refactor.md`
 
 ## 背景
 

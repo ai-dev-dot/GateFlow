@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}数据库备份 — GateFlow{% endblock %}
+{% block nav_backup %}active{% endblock %}
+{% block header_title %}数据库备份{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl space-y-6">
+  <!-- Backup Settings -->
+  <div class="bg-white rounded-lg border border-gray-200" id="settings-card">
+    <div class="px-4 py-3 border-b border-gray-100">
+      <h3 class="text-sm font-semibold text-gray-700">备份设置</h3>
+    </div>
+    <div class="p-4">
+      <form id="settings-form" class="space-y-4 max-w-xl">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">备份目录</label>
+          <input type="text" name="backup_dir" id="cfg-backup-dir"
+                 placeholder="如 /var/backups/gateflow"
+                 class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">pg_dump 路径</label>
+          <input type="text" name="pg_dump_path" id="cfg-pg-dump-path"
+                 placeholder="如 C:\Program Files\PostgreSQL\16\bin\pg_dump.exe"
+                 class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+          <p class="text-xs text-gray-500 mt-1">PostgreSQL 客户端工具 pg_dump 的绝对路径</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <input type="checkbox" name="backup_include_audit_logs" id="cfg-include-audit" class="rounded">
+          <label for="cfg-include-audit" class="text-sm text-gray-700">同时备份 LLM 调用日志（可能很大）</label>
+        </div>
+        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700">
+          保存设置
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Run Backup -->
+  <div class="bg-white rounded-lg border border-gray-200">
+    <div class="px-4 py-3 border-b border-gray-100">
+      <h3 class="text-sm font-semibold text-gray-700">立即备份</h3>
+    </div>
+    <div class="p-4 space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">备份备注（可选）</label>
+        <textarea id="backup-note" rows="1" maxlength="200" placeholder="如：升级前全量备份"
+                  class="w-full max-w-xl border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
+      </div>
+      <button id="btn-run-backup" onclick="runBackup()"
+              class="bg-blue-600 text-white px-5 py-2 rounded text-sm font-medium hover:bg-blue-700">
+        立即备份
+      </button>
+      <div id="backup-alert" class="hidden"></div>
+      <div id="backup-result" class="hidden grid grid-cols-4 gap-4"></div>
+    </div>
+  </div>
+
+  <!-- History -->
+  <div class="bg-white rounded-lg border border-gray-200">
+    <div class="px-4 py-3 border-b border-gray-100">
+      <h3 class="text-sm font-semibold text-gray-700">历史备份</h3>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-gray-500">
+          <tr>
+            <th class="text-left px-4 py-2 font-medium">文件名</th>
+            <th class="text-left px-4 py-2 font-medium">备注</th>
+            <th class="text-right px-4 py-2 font-medium">大小</th>
+            <th class="text-left px-4 py-2 font-medium">备份时间</th>
+          </tr>
+        </thead>
+        <tbody id="history-body">
+          <tr><td colspan="4" class="text-center py-8 text-gray-400">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const api = '/api/backup';
+
+async function apiFetch(path, opts = {}) {
+  const res = await fetch(api + path, {
+    ...opts,
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', ...opts.headers },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+// Load config
+async function loadConfig() {
+  try {
+    const cfg = await apiFetch('/config');
+    document.getElementById('cfg-backup-dir').value = cfg.backup_dir || '';
+    document.getElementById('cfg-pg-dump-path').value = cfg.pg_dump_path || '';
+    document.getElementById('cfg-include-audit').checked = cfg.backup_include_audit_logs;
+  } catch {}
+}
+
+// Save config
+document.getElementById('settings-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await apiFetch('/config', {
+      method: 'PUT',
+      body: JSON.stringify({
+        backup_dir: document.getElementById('cfg-backup-dir').value,
+        pg_dump_path: document.getElementById('cfg-pg-dump-path').value,
+        backup_include_audit_logs: document.getElementById('cfg-include-audit').checked,
+      }),
+    });
+    showToast('设置已保存');
+  } catch (e) { showToast(e.message, 'error'); }
+});
+
+// Run backup
+async function runBackup() {
+  const btn = document.getElementById('btn-run-backup');
+  const alertEl = document.getElementById('backup-alert');
+  const resultEl = document.getElementById('backup-result');
+  btn.disabled = true; btn.textContent = '备份中...';
+  alertEl.className = 'hidden'; resultEl.className = 'hidden';
+
+  try {
+    const note = document.getElementById('backup-note').value.trim();
+    const r = await apiFetch('/run', {
+      method: 'POST',
+      body: JSON.stringify({ note: note || undefined }),
+    });
+    document.getElementById('backup-note').value = '';
+    resultEl.className = 'grid grid-cols-4 gap-4';
+    resultEl.innerHTML = `
+      <div><div class="text-xs text-gray-500">文件</div><div class="font-semibold">${r.filename}</div></div>
+      <div><div class="text-xs text-gray-500">大小</div><div class="font-semibold">${formatBytes(r.size_bytes)}</div></div>
+      <div><div class="text-xs text-gray-500">耗时</div><div class="font-semibold">${formatDuration(r.duration_ms)}</div></div>
+      <div><div class="text-xs text-gray-500">表数量</div><div class="font-semibold">${r.tables_dumped}${r.excluded_audit_logs ? ' <span class="text-xs text-gray-400">(已排除audit_logs)</span>' : ''}</div></div>`;
+    showToast('备份完成: ' + r.filename);
+    loadHistory();
+  } catch (e) {
+    alertEl.className = 'bg-red-50 text-red-700 text-sm rounded p-3 border border-red-200';
+    alertEl.textContent = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = '立即备份';
+  }
+}
+
+// Load history
+async function loadHistory() {
+  try {
+    const files = await apiFetch('/history');
+    const tbody = document.getElementById('history-body');
+    if (!files.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-center py-8 text-gray-400">暂无备份</td></tr>';
+      return;
+    }
+    tbody.innerHTML = files.map(f => `
+      <tr class="border-t border-gray-100 hover:bg-gray-50">
+        <td class="px-4 py-2">${f.filename}</td>
+        <td class="px-4 py-2 text-gray-500">${f.note || '<span class="text-gray-300">—</span>'}</td>
+        <td class="px-4 py-2 text-right">${formatBytes(f.size_bytes)}</td>
+        <td class="px-4 py-2">${formatDateTime(f.mtime)}</td>
+      </tr>`).join('');
+  } catch {}
+}
+
+loadConfig();
+loadHistory();
+</script>
+{% endblock %}

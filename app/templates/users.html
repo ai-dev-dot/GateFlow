@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+{% block title %}人员管理 — GateFlow{% endblock %}
+{% block nav_users %}active{% endblock %}
+{% block header_title %}人员管理{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+  <!-- Tabs -->
+  <div class="flex border-b border-gray-200">
+    <button onclick="switchTab('users')" id="tab-users" class="px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-600">用户管理</button>
+    <button onclick="switchTab('departments')" id="tab-departments" class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">部门管理</button>
+  </div>
+
+  <!-- Users Tab -->
+  <div id="panel-users">
+    <div class="flex justify-end mb-3">
+      <button onclick="showUserModal()" class="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700">+ 创建用户</button>
+    </div>
+    <div class="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-gray-500">
+          <tr>
+            <th class="text-left px-4 py-2 font-medium">用户名</th>
+            <th class="text-left px-4 py-2 font-medium">邮箱</th>
+            <th class="text-left px-4 py-2 font-medium">角色</th>
+            <th class="text-left px-4 py-2 font-medium">部门</th>
+            <th class="text-left px-4 py-2 font-medium">状态</th>
+            <th class="text-right px-4 py-2 font-medium">操作</th>
+          </tr>
+        </thead>
+        <tbody id="users-body"><tr><td colspan="6" class="text-center py-8 text-gray-400">加载中...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Departments Tab -->
+  <div id="panel-departments" class="hidden">
+    <div class="flex justify-end mb-3">
+      <button onclick="showDeptModal()" class="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700">+ 创建部门</button>
+    </div>
+    <div class="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-gray-500">
+          <tr>
+            <th class="text-left px-4 py-2 font-medium">部门名称</th>
+            <th class="text-left px-4 py-2 font-medium">上级部门</th>
+            <th class="text-right px-4 py-2 font-medium">操作</th>
+          </tr>
+        </thead>
+        <tbody id="depts-body"><tr><td colspan="3" class="text-center py-8 text-gray-400">加载中...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- User Modal -->
+<dialog id="user-modal" class="rounded-lg shadow-xl border border-gray-200 p-0 w-full max-w-lg">
+  <div class="px-4 py-3 border-b border-gray-100 flex justify-between items-center">
+    <h3 id="user-modal-title" class="text-sm font-semibold">创建用户</h3>
+    <button onclick="document.getElementById('user-modal').close()" class="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
+  </div>
+  <form id="user-form" class="p-4 space-y-3">
+    <input type="hidden" id="uf-id">
+    <div><label class="block text-xs font-medium text-gray-700 mb-1">用户名</label><input type="text" id="uf-username" required class="w-full border rounded px-3 py-2 text-sm"></div>
+    <div><label class="block text-xs font-medium text-gray-700 mb-1">密码 <span id="uf-pw-hint" class="text-gray-400">(留空则不修改)</span></label><input type="password" id="uf-password" class="w-full border rounded px-3 py-2 text-sm"></div>
+    <div><label class="block text-xs font-medium text-gray-700 mb-1">邮箱</label><input type="email" id="uf-email" class="w-full border rounded px-3 py-2 text-sm"></div>
+    <div class="grid grid-cols-2 gap-3">
+      <div><label class="block text-xs font-medium text-gray-700 mb-1">角色</label><select id="uf-role" class="w-full border rounded px-3 py-2 text-sm"><option value="user">user</option><option value="admin">admin</option></select></div>
+      <div><label class="block text-xs font-medium text-gray-700 mb-1">部门</label><select id="uf-dept" class="w-full border rounded px-3 py-2 text-sm"><option value="">无</option></select></div>
+    </div>
+    <div class="flex items-center gap-2"><input type="checkbox" id="uf-active" checked><label for="uf-active" class="text-sm">启用</label></div>
+    <div class="flex justify-end gap-2 pt-2">
+      <button type="button" onclick="document.getElementById('user-modal').close()" class="px-4 py-2 border rounded text-sm hover:bg-gray-50">取消</button>
+      <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Dept Modal -->
+<dialog id="dept-modal" class="rounded-lg shadow-xl border border-gray-200 p-0 w-full max-w-sm">
+  <div class="px-4 py-3 border-b border-gray-100 flex justify-between items-center">
+    <h3 id="dept-modal-title" class="text-sm font-semibold">创建部门</h3>
+    <button onclick="document.getElementById('dept-modal').close()" class="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
+  </div>
+  <form id="dept-form" class="p-4 space-y-3">
+    <input type="hidden" id="df-id">
+    <div><label class="block text-xs font-medium text-gray-700 mb-1">部门名称</label><input type="text" id="df-name" required class="w-full border rounded px-3 py-2 text-sm"></div>
+    <div><label class="block text-xs font-medium text-gray-700 mb-1">上级部门</label><select id="df-parent" class="w-full border rounded px-3 py-2 text-sm"><option value="">无</option></select></div>
+    <div class="flex justify-end gap-2 pt-2">
+      <button type="button" onclick="document.getElementById('dept-modal').close()" class="px-4 py-2 border rounded text-sm hover:bg-gray-50">取消</button>
+      <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">保存</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let userEditingId = null;
+let deptEditingId = null;
+let departments = [];
+let roles = [];
+
+function switchTab(tab) {
+  document.getElementById('panel-users').classList.toggle('hidden', tab !== 'users');
+  document.getElementById('panel-departments').classList.toggle('hidden', tab !== 'departments');
+  document.getElementById('tab-users').className = tab === 'users' ? 'px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-600' : 'px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700';
+  document.getElementById('tab-departments').className = tab === 'departments' ? 'px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-600' : 'px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700';
+}
+
+async function loadAll() {
+  await Promise.all([loadDepartments(), loadRoles()]);
+  loadUsers();
+}
+
+async function loadRoles() {
+  try {
+    const res = await fetch('/api/users/roles', { credentials: 'same-origin' });
+    roles = await res.json();
+  } catch { roles = []; }
+}
+
+async function loadDepartments() {
+  try {
+    const res = await fetch('/api/users/departments', { credentials: 'same-origin' });
+    departments = await res.json();
+    populateDeptSelects();
+    renderDepts();
+  } catch {}
+}
+
+function populateDeptSelects() {
+  ['uf-dept', 'df-parent'].forEach(id => {
+    const sel = document.getElementById(id);
+    const val = sel.value;
+    sel.innerHTML = '<option value="">无</option>';
+    departments.forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.id; opt.textContent = d.name;
+      sel.appendChild(opt);
+    });
+    sel.value = val;
+  });
+}
+
+async function loadUsers() {
+  try {
+    const res = await fetch('/api/users', { credentials: 'same-origin' });
+    const users = await res.json();
+    const tbody = document.getElementById('users-body');
+    if (!users.length) { tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-gray-400">暂无用户</td></tr>'; return; }
+    tbody.innerHTML = users.map(u => {
+      const statusColor = u.is_active ? 'green' : 'gray';
+      const dept = departments.find(d => d.id === u.department_id);
+      return `<tr class="border-t border-gray-100 hover:bg-gray-50">
+        <td class="px-4 py-2 font-medium">${u.username}</td>
+        <td class="px-4 py-2 text-gray-500">${u.email || '—'}</td>
+        <td class="px-4 py-2">${u.role || 'user'}</td>
+        <td class="px-4 py-2">${dept ? dept.name : '—'}</td>
+        <td class="px-4 py-2"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-${statusColor}-100 text-${statusColor}-800">${u.is_active ? '启用' : '禁用'}</span></td>
+        <td class="px-4 py-2 text-right">
+          <button onclick="editUser('${u.id}')" class="text-blue-600 hover:underline text-xs mr-2">编辑</button>
+          <button onclick="deleteUser('${u.id}', '${u.username}')" class="text-red-600 hover:underline text-xs">删除</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch {}
+}
+
+function renderDepts() {
+  const tbody = document.getElementById('depts-body');
+  if (!departments.length) { tbody.innerHTML = '<tr><td colspan="3" class="text-center py-8 text-gray-400">暂无部门</td></tr>'; return; }
+  tbody.innerHTML = departments.map(d => {
+    const parent = departments.find(p => p.id === d.parent_id);
+    return `<tr class="border-t border-gray-100 hover:bg-gray-50">
+      <td class="px-4 py-2 font-medium">${d.name}</td>
+      <td class="px-4 py-2 text-gray-500">${parent ? parent.name : '—'}</td>
+      <td class="px-4 py-2 text-right">
+        <button onclick="editDept('${d.id}')" class="text-blue-600 hover:underline text-xs mr-2">编辑</button>
+        <button onclick="deleteDept('${d.id}', '${d.name}')" class="text-red-600 hover:underline text-xs">删除</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// User CRUD
+function showUserModal() {
+  userEditingId = null;
+  document.getElementById('user-modal-title').textContent = '创建用户';
+  document.getElementById('uf-id').value = '';
+  document.getElementById('uf-username').value = '';
+  document.getElementById('uf-password').value = '';
+  document.getElementById('uf-email').value = '';
+  document.getElementById('uf-role').value = 'user';
+  document.getElementById('uf-dept').value = '';
+  document.getElementById('uf-active').checked = true;
+  document.getElementById('uf-pw-hint').classList.add('hidden');
+  document.getElementById('user-modal').showModal();
+}
+
+async function editUser(id) {
+  const res = await fetch('/api/users', { credentials: 'same-origin' });
+  const users = await res.json();
+  const u = users.find(u => u.id === id);
+  if (!u) return;
+  userEditingId = id;
+  document.getElementById('user-modal-title').textContent = '编辑用户';
+  document.getElementById('uf-id').value = id;
+  document.getElementById('uf-username').value = u.username;
+  document.getElementById('uf-password').value = '';
+  document.getElementById('uf-email').value = u.email || '';
+  document.getElementById('uf-role').value = u.role || 'user';
+  document.getElementById('uf-dept').value = u.department_id || '';
+  document.getElementById('uf-active').checked = u.is_active;
+  document.getElementById('uf-pw-hint').classList.remove('hidden');
+  document.getElementById('user-modal').showModal();
+}
+
+document.getElementById('user-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    username: document.getElementById('uf-username').value,
+    email: document.getElementById('uf-email').value || null,
+    role: document.getElementById('uf-role').value,
+    department_id: document.getElementById('uf-dept').value || null,
+    is_active: document.getElementById('uf-active').checked,
+  };
+  const pw = document.getElementById('uf-password').value;
+  if (pw) body.password = pw;
+
+  try {
+    const url = userEditingId ? `/api/users/${userEditingId}` : '/api/users';
+    const method = userEditingId ? 'PUT' : 'POST';
+    const res = await fetch(url, { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || '保存失败'); }
+    document.getElementById('user-modal').close();
+    showToast('已保存');
+    loadAll();
+  } catch (e) { showToast(e.message, 'error'); }
+});
+
+async function deleteUser(id, name) {
+  if (!confirm(`确定删除用户 "${name}"？`)) return;
+  try {
+    const res = await fetch(`/api/users/${id}`, { method: 'DELETE', credentials: 'same-origin' });
+    if (!res.ok) throw new Error('删除失败');
+    showToast('已删除'); loadAll();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+// Dept CRUD
+function showDeptModal() {
+  deptEditingId = null;
+  document.getElementById('dept-modal-title').textContent = '创建部门';
+  document.getElementById('df-id').value = '';
+  document.getElementById('df-name').value = '';
+  document.getElementById('df-parent').value = '';
+  document.getElementById('dept-modal').showModal();
+}
+
+function editDept(id) {
+  const d = departments.find(d => d.id === id);
+  if (!d) return;
+  deptEditingId = id;
+  document.getElementById('dept-modal-title').textContent = '编辑部门';
+  document.getElementById('df-id').value = id;
+  document.getElementById('df-name').value = d.name;
+  document.getElementById('df-parent').value = d.parent_id || '';
+  document.getElementById('dept-modal').showModal();
+}
+
+document.getElementById('dept-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = { name: document.getElementById('df-name').value, parent_id: document.getElementById('df-parent').value || null };
+  try {
+    const url = deptEditingId ? `/api/users/departments/${deptEditingId}` : '/api/users/departments';
+    const method = deptEditingId ? 'PUT' : 'POST';
+    const res = await fetch(url, { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || '保存失败'); }
+    document.getElementById('dept-modal').close();
+    showToast('已保存'); loadDepartments();
+  } catch (e) { showToast(e.message, 'error'); }
+});
+
+async function deleteDept(id, name) {
+  if (!confirm(`确定删除部门 "${name}"？`)) return;
+  try {
+    const res = await fetch(`/api/users/departments/${id}`, { method: 'DELETE', credentials: 'same-origin' });
+    if (!res.ok) throw new Error('删除失败');
+    showToast('已删除'); loadDepartments();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+loadAll();
+</script>
+{% endblock %}

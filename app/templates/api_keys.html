@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block title %}API Key — GateFlow{% endblock %}
+{% block nav_api_keys %}active{% endblock %}
+{% block header_title %}API Key 管理{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+  <div class="flex justify-between items-center">
+    <p class="text-sm text-gray-500">管理客户端 API Key，用于访问网关 API</p>
+    <button onclick="showCreateModal()" class="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700">
+      + 创建 Key
+    </button>
+  </div>
+
+  <div class="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-gray-500">
+        <tr>
+          <th class="text-left px-4 py-2 font-medium">名称</th>
+          <th class="text-left px-4 py-2 font-medium">Key 前缀</th>
+          <th class="text-left px-4 py-2 font-medium">客户端类型</th>
+          <th class="text-left px-4 py-2 font-medium">权限</th>
+          <th class="text-right px-4 py-2 font-medium">速率限制</th>
+          <th class="text-left px-4 py-2 font-medium">状态</th>
+          <th class="text-left px-4 py-2 font-medium">过期时间</th>
+          <th class="text-right px-4 py-2 font-medium">操作</th>
+        </tr>
+      </thead>
+      <tbody id="keys-body">
+        <tr><td colspan="8" class="text-center py-8 text-gray-400">加载中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Create/Edit Modal -->
+<dialog id="key-modal" class="rounded-lg shadow-xl border border-gray-200 p-0 w-full max-w-lg">
+  <div class="px-4 py-3 border-b border-gray-100 flex justify-between items-center">
+    <h3 id="modal-title" class="text-sm font-semibold">创建 API Key</h3>
+    <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
+  </div>
+  <form id="key-form" class="p-4 space-y-3">
+    <input type="hidden" id="kf-id">
+    <div>
+      <label class="block text-xs font-medium text-gray-700 mb-1">名称</label>
+      <input type="text" id="kf-name" required class="w-full border rounded px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-700 mb-1">客户端类型</label>
+      <select id="kf-agent-type" class="w-full border rounded px-3 py-2 text-sm">
+        <option value="">选择类型</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-700 mb-1">权限</label>
+      <div class="flex gap-3 text-sm" id="kf-permissions">
+        <label><input type="checkbox" value="chat" checked> chat</label>
+        <label><input type="checkbox" value="models"> models</label>
+        <label><input type="checkbox" value="completions"> completions</label>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">速率限制 (req/min)</label>
+        <input type="number" id="kf-rate-limit" value="60" min="0" class="w-full border rounded px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">过期时间</label>
+        <input type="datetime-local" id="kf-expires" class="w-full border rounded px-3 py-2 text-sm">
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <input type="checkbox" id="kf-active" checked>
+      <label for="kf-active" class="text-sm">启用</label>
+    </div>
+    <div class="flex justify-end gap-2 pt-2">
+      <button type="button" onclick="closeModal()" class="px-4 py-2 border rounded text-sm hover:bg-gray-50">取消</button>
+      <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Key Created Modal -->
+<dialog id="key-created-modal" class="rounded-lg shadow-xl border border-gray-200 p-0 w-full max-w-lg">
+  <div class="px-4 py-3 border-b border-gray-100">
+    <h3 class="text-sm font-semibold text-green-700">✓ API Key 已创建</h3>
+  </div>
+  <div class="p-4 space-y-3">
+    <p class="text-sm text-gray-600">请复制下面的 Key，此信息仅显示一次：</p>
+    <div class="bg-gray-50 rounded p-3 font-mono text-sm break-all" id="created-key-value"></div>
+    <div class="flex justify-end">
+      <button onclick="copyAndClose()" class="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">复制并关闭</button>
+    </div>
+  </div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const modal = document.getElementById('key-modal');
+const createdModal = document.getElementById('key-created-modal');
+let editingId = null;
+let createdKeyValue = '';
+
+async function loadKeys() {
+  try {
+    const res = await fetch('/api/api-keys', { credentials: 'same-origin' });
+    const keys = await res.json();
+    const tbody = document.getElementById('keys-body');
+    if (!keys.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-gray-400">暂无 API Key</td></tr>';
+      return;
+    }
+    tbody.innerHTML = keys.map(k => {
+      const statusColor = k.is_active ? 'green' : 'gray';
+      const statusText = k.is_active ? '启用' : '禁用';
+      const perms = (k.permissions || []).join(', ') || '—';
+      const expires = k.expires_at ? formatDateTime(k.expires_at) : '—';
+      return `<tr class="border-t border-gray-100 hover:bg-gray-50">
+        <td class="px-4 py-2 font-medium">${k.name}</td>
+        <td class="px-4 py-2 font-mono text-xs text-gray-500">${k.key_prefix || '—'}</td>
+        <td class="px-4 py-2">${k.agent_type_name || '—'}</td>
+        <td class="px-4 py-2 text-xs">${perms}</td>
+        <td class="px-4 py-2 text-right">${k.rate_limit}/min</td>
+        <td class="px-4 py-2"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-${statusColor}-100 text-${statusColor}-800">${statusText}</span></td>
+        <td class="px-4 py-2 text-xs">${expires}</td>
+        <td class="px-4 py-2 text-right">
+          <button onclick="editKey('${k.id}')" class="text-blue-600 hover:underline text-xs mr-2">编辑</button>
+          <button onclick="deleteKey('${k.id}', '${k.name}')" class="text-red-600 hover:underline text-xs">删除</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (e) { console.error('loadKeys:', e); }
+}
+
+async function loadAgentTypes() {
+  try {
+    const res = await fetch('/api/agent-types', { credentials: 'same-origin' });
+    const types = await res.json();
+    const select = document.getElementById('kf-agent-type');
+    types.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = t.name;
+      select.appendChild(opt);
+    });
+  } catch {}
+}
+
+function showCreateModal() {
+  editingId = null;
+  document.getElementById('modal-title').textContent = '创建 API Key';
+  document.getElementById('kf-id').value = '';
+  document.getElementById('kf-name').value = '';
+  document.getElementById('kf-agent-type').value = '';
+  document.getElementById('kf-rate-limit').value = '60';
+  document.getElementById('kf-expires').value = '';
+  document.getElementById('kf-active').checked = true;
+  document.querySelectorAll('#kf-permissions input').forEach((cb, i) => cb.checked = i === 0);
+  modal.showModal();
+}
+
+async function editKey(id) {
+  try {
+    const res = await fetch('/api/api-keys', { credentials: 'same-origin' });
+    const keys = await res.json();
+    const k = keys.find(k => k.id === id);
+    if (!k) return;
+    editingId = id;
+    document.getElementById('modal-title').textContent = '编辑 API Key';
+    document.getElementById('kf-id').value = id;
+    document.getElementById('kf-name').value = k.name;
+    document.getElementById('kf-agent-type').value = k.agent_type_id || '';
+    document.getElementById('kf-rate-limit').value = k.rate_limit;
+    document.getElementById('kf-active').checked = k.is_active;
+    if (k.expires_at) {
+      document.getElementById('kf-expires').value = k.expires_at.slice(0, 16);
+    }
+    const perms = k.permissions || ['chat'];
+    document.querySelectorAll('#kf-permissions input').forEach(cb => {
+      cb.checked = perms.includes(cb.value);
+    });
+    modal.showModal();
+  } catch {}
+}
+
+function closeModal() { modal.close(); }
+
+document.getElementById('key-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const perms = [...document.querySelectorAll('#kf-permissions input:checked')].map(cb => cb.value);
+  const body = {
+    name: document.getElementById('kf-name').value,
+    agent_type_id: document.getElementById('kf-agent-type').value || null,
+    permissions: perms,
+    rate_limit: parseInt(document.getElementById('kf-rate-limit').value) || 60,
+    is_active: document.getElementById('kf-active').checked,
+  };
+  const expires = document.getElementById('kf-expires').value;
+  if (expires) body.expires_at = new Date(expires).toISOString();
+
+  try {
+    let res;
+    if (editingId) {
+      res = await fetch(`/api/api-keys/${editingId}`, {
+        method: 'PUT', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } else {
+      res = await fetch('/api/api-keys', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || '保存失败');
+    }
+    const result = await res.json();
+    modal.close();
+
+    // Show created key
+    if (!editingId && result.key) {
+      createdKeyValue = result.key;
+      document.getElementById('created-key-value').textContent = result.key;
+      createdModal.showModal();
+    } else {
+      showToast('已保存');
+    }
+    loadKeys();
+  } catch (e) { showToast(e.message, 'error'); }
+});
+
+function copyAndClose() {
+  copyToClipboard(createdKeyValue);
+  createdModal.close();
+}
+
+async function deleteKey(id, name) {
+  if (!confirm(`确定删除 "${name}"？`)) return;
+  try {
+    const res = await fetch(`/api/api-keys/${id}`, { method: 'DELETE', credentials: 'same-origin' });
+    if (!res.ok) throw new Error('删除失败');
+    showToast('已删除');
+    loadKeys();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+loadAgentTypes();
+loadKeys();
+</script>
+{% endblock %}

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}AI 对话 — GateFlow{% endblock %}
+{% block nav_chat %}active{% endblock %}
+{% block header_title %}AI 对话{% endblock %}
+
+{% block body %}
+<body class="bg-gray-50 flex h-screen overflow-hidden">
+  <!-- Sidebar: conversations -->
+  <aside class="w-64 bg-gray-900 text-gray-100 flex flex-col shrink-0">
+    <div class="h-14 flex items-center justify-between px-4 border-b border-gray-700">
+      <span class="text-sm font-medium">会话列表</span>
+      <button onclick="createConversation()" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">+ 新建</button>
+    </div>
+    <div id="conv-list" class="flex-1 overflow-y-auto py-1 text-sm">
+      <div class="px-4 py-6 text-center text-gray-500 text-xs">加载中...</div>
+    </div>
+    <div class="border-t border-gray-700 px-4 py-2 flex items-center justify-between text-xs text-gray-400">
+      <span>{{ user.username }}</span>
+      <a href="/pages/logout" class="hover:text-gray-200">退出</a>
+    </div>
+  </aside>
+
+  <!-- Chat area -->
+  <div class="flex-1 flex flex-col min-w-0">
+    <!-- Model selector -->
+    <div class="h-12 border-b border-gray-200 bg-white flex items-center px-4 gap-2 shrink-0">
+      <label class="text-xs text-gray-500">模型:</label>
+      <select id="model-select" class="border border-gray-300 rounded px-2 py-1 text-sm flex-1 max-w-xs">
+        <option value="">加载中...</option>
+      </select>
+    </div>
+
+    <!-- Messages -->
+    <div id="messages" class="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+      <div class="text-center text-gray-400 text-sm py-12">选择或创建一个会话开始对话</div>
+    </div>
+
+    <!-- Input -->
+    <div class="border-t border-gray-200 bg-white px-4 py-3 shrink-0">
+      <div class="flex gap-2 max-w-3xl mx-auto">
+        <textarea id="chat-input" rows="1" placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
+                  class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  style="max-height: 120px;"></textarea>
+        <button id="btn-send" onclick="sendMessage()"
+                class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 shrink-0">
+          发送
+        </button>
+      </div>
+    </div>
+  </div>
+</body>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/chat.js"></script>
+{% endblock %}

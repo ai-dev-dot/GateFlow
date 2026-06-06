@@ -31,16 +31,6 @@ coverage.xml
 .ruff_cache/
 .dmypy.json
 
-# === Node.js ===
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# Vite
-frontend/dist/
-
 # === IDE ===
 .idea/
 .vscode/
@@ -64,6 +54,7 @@ Desktop.ini
 .claude/
 .gstack/
 backups/
-backend/backups/
-backend/backups2/
-/d/APP/GateFlow/backend/backups/
+
+# === Legacy (removed) ===
+frontend/
+backend/

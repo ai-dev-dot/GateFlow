@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}GateFlow{% endblock %}</title>
+  <!-- Tailwind CSS v4 CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- htmx 2.0 CDN -->
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <!-- ECharts 5 CDN (loaded on all pages, used by chart pages) -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="/static/css/app.css">
+  {% block head %}{% endblock %}
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen flex">
+  {% block body %}
+  <!-- Sidebar -->
+  <aside id="sidebar" class="w-56 bg-gray-900 text-gray-100 flex flex-col shrink-0 min-h-screen transition-all duration-200">
+    <div class="h-14 flex items-center px-4 border-b border-gray-700">
+      <span class="text-lg font-bold tracking-wide">GF <span class="text-sm font-normal text-gray-400">闸机</span></span>
+    </div>
+    <nav class="flex-1 py-2 text-sm">
+      <a href="/pages/chat" class="sidebar-link {% block nav_chat %}{% endblock %}">
+        <span class="sidebar-icon">💬</span> AI 对话
+      </a>
+      {% if user and user.role and user.role.name == 'admin' %}
+      <a href="/pages/dashboard" class="sidebar-link {% block nav_dashboard %}{% endblock %}">
+        <span class="sidebar-icon">📊</span> 全局看板
+      </a>
+      {% endif %}
+      {% if user and (not user.role or user.role.name != 'admin') %}
+      <a href="/pages/my-usage" class="sidebar-link {% block nav_my_usage %}{% endblock %}">
+        <span class="sidebar-icon">📈</span> 我的用量
+      </a>
+      {% endif %}
+      {% if user and user.role and user.role.name == 'admin' %}
+      <a href="/pages/gateway" class="sidebar-link {% block nav_gateway %}{% endblock %}">
+        <span class="sidebar-icon">🔗</span> 大模型管理
+      </a>
+      <a href="/pages/users" class="sidebar-link {% block nav_users %}{% endblock %}">
+        <span class="sidebar-icon">👥</span> 人员管理
+      </a>
+      <a href="/pages/audit" class="sidebar-link {% block nav_audit %}{% endblock %}">
+        <span class="sidebar-icon">📋</span> LLM 调用日志
+      </a>
+      <a href="/pages/usage" class="sidebar-link {% block nav_usage %}{% endblock %}">
+        <span class="sidebar-icon">📉</span> 使用统计
+      </a>
+      <a href="/pages/api-keys" class="sidebar-link {% block nav_api_keys %}{% endblock %}">
+        <span class="sidebar-icon">🔑</span> API Key
+      </a>
+      <a href="/pages/backup" class="sidebar-link {% block nav_backup %}{% endblock %}">
+        <span class="sidebar-icon">💾</span> 数据库备份
+      </a>
+      {% endif %}
+    </nav>
+  </aside>
+
+  <!-- Main content area -->
+  <div class="flex-1 flex flex-col min-h-screen">
+    <!-- Header -->
+    <header class="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0">
+      <h1 class="text-base font-semibold text-gray-700">{% block header_title %}{% endblock %}</h1>
+      <div class="flex items-center gap-4">
+        {% if user %}
+        <span class="text-sm text-gray-500">{{ user.username }}</span>
+        <a href="/pages/login" class="text-sm text-gray-400 hover:text-gray-600">退出</a>
+        {% endif %}
+      </div>
+    </header>
+
+    <!-- Page content -->
+    <main class="flex-1 p-6">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  {% endblock %}
+
+  <script src="/static/js/app.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

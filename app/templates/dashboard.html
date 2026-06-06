@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}全局看板 — GateFlow{% endblock %}
+{% block nav_dashboard %}active{% endblock %}
+{% block header_title %}全局看板{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <!-- Stat Cards -->
+  <div id="stat-cards" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="bg-white rounded-lg border border-gray-200 p-4">
+      <div class="text-xs text-gray-500 mb-1">本月请求数</div>
+      <div id="stat-requests" class="text-2xl font-semibold">—</div>
+    </div>
+    <div class="bg-white rounded-lg border border-gray-200 p-4">
+      <div class="text-xs text-gray-500 mb-1">本月 Token 数</div>
+      <div id="stat-tokens" class="text-2xl font-semibold">—</div>
+    </div>
+    <div class="bg-white rounded-lg border border-gray-200 p-4">
+      <div class="text-xs text-gray-500 mb-1">模型数量</div>
+      <div id="stat-models" class="text-2xl font-semibold">—</div>
+    </div>
+    <div class="bg-white rounded-lg border border-gray-200 p-4">
+      <div class="text-xs text-gray-500 mb-1">部门数量</div>
+      <div id="stat-depts" class="text-2xl font-semibold">—</div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="bg-white rounded-lg border border-gray-200 p-4">
+      <h3 class="text-sm font-semibold text-gray-700 mb-3">模型用量占比</h3>
+      <div id="chart-model-pie" style="height: 300px;"></div>
+    </div>
+    <div class="bg-white rounded-lg border border-gray-200 p-4">
+      <h3 class="text-sm font-semibold text-gray-700 mb-3">部门用量排名</h3>
+      <div id="chart-dept-bar" style="height: 300px;"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadDashboard() {
+  try {
+    const [summary, models, depts] = await Promise.all([
+      fetch('/api/usage/summary', { credentials: 'same-origin' }).then(r => r.json()),
+      fetch('/api/gateway/models', { credentials: 'same-origin' }).then(r => r.json()),
+      fetch('/api/users/departments', { credentials: 'same-origin' }).then(r => r.json()),
+    ]);
+
+    // Stat cards
+    document.getElementById('stat-requests').textContent = (summary.total_requests ?? summary.request_count ?? 0).toLocaleString();
+    document.getElementById('stat-tokens').textContent = (summary.total_tokens ?? 0).toLocaleString();
+    document.getElementById('stat-models').textContent = models.length;
+    document.getElementById('stat-depts').textContent = depts.length;
+  } catch (e) { console.error('loadDashboard stats:', e); }
+
+  // Model pie chart
+  try {
+    const res = await fetch('/api/usage/summary?dimension=model', { credentials: 'same-origin' });
+    const data = await res.json();
+    const items = data.items || data;
+    if (items && items.length) {
+      const chart = echarts.init(document.getElementById('chart-model-pie'));
+      chart.setOption({
+        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+        series: [{
+          type: 'pie', radius: ['40%', '70%'],
+          data: items.map(i => ({ name: i.model || i.alias, value: i.total_tokens || i.request_count || 0 })),
+          label: { show: true, formatter: '{b}\n{d}%' },
+        }],
+      });
+      window.addEventListener('resize', () => chart.resize());
+    }
+  } catch (e) { console.error('model pie:', e); }
+
+  // Department bar chart
+  try {
+    const res = await fetch('/api/usage/summary?dimension=department', { credentials: 'same-origin' });
+    const data = await res.json();
+    const items = data.items || data;
+    if (items && items.length) {
+      const sorted = [...items].sort((a, b) => (a.total_tokens || 0) - (b.total_tokens || 0));
+      const chart = echarts.init(document.getElementById('chart-dept-bar'));
+      chart.setOption({
+        tooltip: { trigger: 'axis' },
+        xAxis: { type: 'value' },
+        yAxis: { type: 'category', data: sorted.map(i => i.department || i.name || '—') },
+        series: [{ type: 'bar', data: sorted.map(i => i.total_tokens || i.request_count || 0), itemStyle: { color: '#3b82f6' } }],
+      });
+      window.addEventListener('resize', () => chart.resize());
+    }
+  } catch (e) { console.error('dept bar:', e); }
+}
+
+loadDashboard();
+</script>
+{% endblock %}

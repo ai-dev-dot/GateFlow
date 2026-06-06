@@ -1,0 +1,89 @@
+/* GateFlow custom styles */
+
+/* Sidebar links */
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  color: #d1d5db;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+.sidebar-link:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.sidebar-link.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-right: 3px solid #3b82f6;
+}
+.sidebar-icon {
+  width: 20px;
+  text-align: center;
+  margin-right: 8px;
+  font-size: 14px;
+}
+
+/* Chat message bubbles */
+.msg-user {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px 12px 2px 12px;
+  padding: 10px 14px;
+  max-width: 80%;
+  margin-left: auto;
+}
+.msg-assistant {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px 12px 12px 2px;
+  padding: 10px 14px;
+  max-width: 80%;
+}
+
+/* Blinking cursor for streaming */
+@keyframes gf-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.cursor-blink::after {
+  content: '▊';
+  animation: gf-blink 0.8s step-end infinite;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+/* htmx indicator */
+.htmx-indicator {
+  display: none;
+}
+.htmx-request .htmx-indicator {
+  display: inline-block;
+}
+
+/* Table rows hover */
+tr.hoverable:hover {
+  background: #f9fafb;
+}
+
+/* Prose content (chat messages with markdown) */
+.prose-sm p { margin: 0.4em 0; }
+.prose-sm pre {
+  background: #1f2937;
+  color: #e5e7eb;
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 13px;
+}
+.prose-sm code {
+  background: #f3f4f6;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 13px;
+}
+.prose-sm pre code {
+  background: none;
+  padding: 0;
+}

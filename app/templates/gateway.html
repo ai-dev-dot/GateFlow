@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+{% block title %}大模型管理 — GateFlow{% endblock %}
+{% block nav_gateway %}active{% endblock %}
+{% block header_title %}大模型管理{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+  <div class="flex border-b border-gray-200">
+    <button onclick="switchTab('models')" id="tab-models" class="px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-600">模型配置</button>
+    <button onclick="switchTab('keys')" id="tab-keys" class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Provider API Key</button>
+  </div>
+
+  <!-- Models Tab -->
+  <div id="panel-models">
+    <div class="flex justify-end mb-3">
+      <button onclick="showModelModal()" class="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700">+ 创建模型</button>
+    </div>
+    <div class="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-gray-500">
+          <tr>
+            <th class="text-left px-4 py-2 font-medium">别名</th>
+            <th class="text-left px-4 py-2 font-medium">供应商</th>
+            <th class="text-left px-4 py-2 font-medium">目标模型</th>
+            <th class="text-left px-4 py-2 font-medium">目标 URL</th>
+            <th class="text-right px-4 py-2 font-medium">优先级</th>
+            <th class="text-left px-4 py-2 font-medium">状态</th>
+            <th class="text-right px-4 py-2 font-medium">操作</th>
+          </tr>
+        </thead>
+        <tbody id="models-body"><tr><td colspan="7" class="text-center py-8 text-gray-400">加载中...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Provider Keys Tab -->
+  <div id="panel-keys" class="hidden">
+    <div class="flex justify-end mb-3">
+      <button onclick="showKeyModal()" class="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700">+ 创建 Key</button>
+    </div>
+    <div class="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-gray-500">
+          <tr>
+            <th class="text-left px-4 py-2 font-medium">名称</th>
+            <th class="text-left px-4 py-2 font-medium">供应商</th>
+            <th class="text-left px-4 py-2 font-medium">备注</th>
+            <th class="text-left px-4 py-2 font-medium">Key 前缀</th>
+            <th class="text-left px-4 py-2 font-medium">状态</th>
+            <th class="text-right px-4 py-2 font-medium">操作</th>
+          </tr>
+        </thead>
+        <tbody id="pkeys-body"><tr><td colspan="6" class="text-center py-8 text-gray-400">加载中...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Model Modal -->
+<dialog id="model-modal" class="rounded-lg shadow-xl border border-gray-200 p-0 w-full max-w-lg">
+  <div class="px-4 py-3 border-b border-gray-100 flex justify-between items-center">
+    <h3 id="model-modal-title" class="text-sm font-semibold">创建模型</h3>
+    <button onclick="document.getElementById('model-modal').close()" class="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
+  </div>
+  <form id="model-form" class="p-4 space-y-3">
+    <input type="hidden" id="mf-id">
+    <div class="grid grid-cols-2 gap-3">
+      <div><label class="block text-xs font-medium text-gray-700 mb-1">别名</label><input type="text" id="mf-alias" required class="w-full border rounded px-3 py-2 text-sm"></div>
+      <div><label class="block text-xs font-medium text-gray-700 mb-1">供应商</label><input type="text" id="mf-provider" class="w-full border rounded px-3 py-2 text-sm"></div>
+    </div>
+    <div><label class="block text-xs font-medium text-gray-700 mb-1">目标模型</label><input type="text" id="mf-target-model" required class="w-full border rounded px-3 py-2 text-sm"></div>
+    <div><label class="block text-xs font-medium text-gray-700 mb-1">目标 URL</label><input type="text" id="mf-target-url" class="w-full border rounded px-3 py-2 text-sm" placeholder="留空使用供应商默认"></div>
+    <div class="grid grid-cols-3 gap-3">
+      <div><label class="block text-xs font-medium text-gray-700 mb-1">优先级</label><input type="number" id="mf-priority" value="0" class="w-full border rounded px-3 py-2 text-sm"></div>
+      <div><label class="block text-xs font-medium text-gray-700 mb-1">Temperature</label><input type="number" id="mf-temp" step="0.1" min="0" max="2" class="w-full border rounded px-3 py-2 text-sm"></div>
+      <div><label class="block text-xs font-medium text-gray-700 mb-1">Max Tokens</label><input type="number" id="mf-max-tokens" class="w-full border rounded px-3 py-2 text-sm"></div>
+    </div>
+    <div class="flex items-center gap-2"><input type="checkbox" id="mf-active" checked><label for="mf-active" class="text-sm">启用</label></div>
+    <div class="flex justify-end gap-2 pt-2">
+      <button type="button" onclick="document.getElementById('model-modal').close()" class="px-4 py-2 border rounded text-sm hover:bg-gray-50">取消</button>
+      <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Provider Key Modal -->
+<dialog id="pkey-modal" class="rounded-lg shadow-xl border border-gray-200 p-0 w-full max-w-md">
+  <div class="px-4 py-3 border-b border-gray-100 flex justify-between items-center">
+    <h3 id="pkey-modal-title" class="text-sm font-semibold">创建 Provider Key</h3>
+    <button onclick="document.getElementById('pkey-modal').close()" class="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
+  </div>
+  <form id="pkey-form" class="p-4 space-y-3">
+    <input type="hidden" id="pkf-id">
+    <div><label class="block text-xs font-medium text-gray-700 mb-1">名称</label><input type="text" id="pkf-name" required class="w-full border rounded px-3 py-2 text-sm"></div>
+    <div><label class="block text-xs font-medium text-gray-700 mb-1">供应商</label><input type="text" id="pkf-provider" required class="w-full border rounded px-3 py-2 text-sm"></div>
+    <div><label class="block text-xs font-medium text-gray-700 mb-1">API Key</label><input type="password" id="pkf-key" class="w-full border rounded px-3 py-2 text-sm" placeholder="留空则不修改（编辑时）"></div>
+    <div><label class="block text-xs font-medium text-gray-700 mb-1">备注</label><input type="text" id="pkf-notes" class="w-full border rounded px-3 py-2 text-sm"></div>
+    <div class="flex items-center gap-2"><input type="checkbox" id="pkf-active" checked><label for="pkf-active" class="text-sm">启用</label></div>
+    <div class="flex justify-end gap-2 pt-2">
+      <button type="button" onclick="document.getElementById('pkey-modal').close()" class="px-4 py-2 border rounded text-sm hover:bg-gray-50">取消</button>
+      <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">保存</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let modelEditingId = null;
+let pkeyEditingId = null;
+
+function switchTab(tab) {
+  document.getElementById('panel-models').classList.toggle('hidden', tab !== 'models');
+  document.getElementById('panel-keys').classList.toggle('hidden', tab !== 'keys');
+  document.getElementById('tab-models').className = tab === 'models' ? 'px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-600' : 'px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700';
+  document.getElementById('tab-keys').className = tab === 'keys' ? 'px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-600' : 'px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700';
+}
+
+// Models
+async function loadModels() {
+  try {
+    const res = await fetch('/api/gateway/models', { credentials: 'same-origin' });
+    const models = await res.json();
+    const tbody = document.getElementById('models-body');
+    if (!models.length) { tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-gray-400">暂无模型</td></tr>'; return; }
+    tbody.innerHTML = models.map(m => {
+      const statusColor = m.is_active !== false ? 'green' : 'gray';
+      return `<tr class="border-t border-gray-100 hover:bg-gray-50">
+        <td class="px-4 py-2 font-medium">${m.alias}</td>
+        <td class="px-4 py-2">${m.provider || '—'}</td>
+        <td class="px-4 py-2 font-mono text-xs">${m.target_model}</td>
+        <td class="px-4 py-2 text-xs text-gray-500 truncate max-w-xs">${m.target_url || '—'}</td>
+        <td class="px-4 py-2 text-right">${m.priority ?? 0}</td>
+        <td class="px-4 py-2"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-${statusColor}-100 text-${statusColor}-800">${m.is_active !== false ? '启用' : '禁用'}</span></td>
+        <td class="px-4 py-2 text-right">
+          <button onclick="editModel('${m.id}')" class="text-blue-600 hover:underline text-xs mr-2">编辑</button>
+          <button onclick="deleteModel('${m.id}', '${m.alias}')" class="text-red-600 hover:underline text-xs">删除</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch {}
+}
+
+function showModelModal() {
+  modelEditingId = null;
+  document.getElementById('model-modal-title').textContent = '创建模型';
+  document.getElementById('mf-id').value = '';
+  document.getElementById('mf-alias').value = '';
+  document.getElementById('mf-provider').value = '';
+  document.getElementById('mf-target-model').value = '';
+  document.getElementById('mf-target-url').value = '';
+  document.getElementById('mf-priority').value = '0';
+  document.getElementById('mf-temp').value = '';
+  document.getElementById('mf-max-tokens').value = '';
+  document.getElementById('mf-active').checked = true;
+  document.getElementById('model-modal').showModal();
+}
+
+async function editModel(id) {
+  const res = await fetch('/api/gateway/models', { credentials: 'same-origin' });
+  const models = await res.json();
+  const m = models.find(m => m.id === id);
+  if (!m) return;
+  modelEditingId = id;
+  document.getElementById('model-modal-title').textContent = '编辑模型';
+  document.getElementById('mf-id').value = id;
+  document.getElementById('mf-alias').value = m.alias;
+  document.getElementById('mf-provider').value = m.provider || '';
+  document.getElementById('mf-target-model').value = m.target_model;
+  document.getElementById('mf-target-url').value = m.target_url || '';
+  document.getElementById('mf-priority').value = m.priority ?? 0;
+  document.getElementById('mf-temp').value = m.temperature ?? '';
+  document.getElementById('mf-max-tokens').value = m.max_tokens ?? '';
+  document.getElementById('mf-active').checked = m.is_active !== false;
+  document.getElementById('model-modal').showModal();
+}
+
+document.getElementById('model-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    alias: document.getElementById('mf-alias').value,
+    provider: document.getElementById('mf-provider').value || null,
+    target_model: document.getElementById('mf-target-model').value,
+    target_url: document.getElementById('mf-target-url').value || null,
+    priority: parseInt(document.getElementById('mf-priority').value) || 0,
+    temperature: document.getElementById('mf-temp').value ? parseFloat(document.getElementById('mf-temp').value) : null,
+    max_tokens: document.getElementById('mf-max-tokens').value ? parseInt(document.getElementById('mf-max-tokens').value) : null,
+    is_active: document.getElementById('mf-active').checked,
+  };
+  try {
+    const url = modelEditingId ? `/api/gateway/models/${modelEditingId}` : '/api/gateway/models';
+    const res = await fetch(url, { method: modelEditingId ? 'PUT' : 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || '保存失败'); }
+    document.getElementById('model-modal').close();
+    showToast('已保存'); loadModels();
+  } catch (e) { showToast(e.message, 'error'); }
+});
+
+async function deleteModel(id, name) {
+  if (!confirm(`确定删除模型 "${name}"？`)) return;
+  try {
+    const res = await fetch(`/api/gateway/models/${id}`, { method: 'DELETE', credentials: 'same-origin' });
+    if (!res.ok) throw new Error('删除失败');
+    showToast('已删除'); loadModels();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+// Provider Keys
+async function loadProviderKeys() {
+  try {
+    const res = await fetch('/api/gateway/provider-keys', { credentials: 'same-origin' });
+    const keys = await res.json();
+    const tbody = document.getElementById('pkeys-body');
+    if (!keys.length) { tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-gray-400">暂无 Key</td></tr>'; return; }
+    tbody.innerHTML = keys.map(k => {
+      const statusColor = k.is_active !== false ? 'green' : 'gray';
+      return `<tr class="border-t border-gray-100 hover:bg-gray-50">
+        <td class="px-4 py-2 font-medium">${k.name}</td>
+        <td class="px-4 py-2">${k.provider || '—'}</td>
+        <td class="px-4 py-2 text-gray-500">${k.notes || '—'}</td>
+        <td class="px-4 py-2 font-mono text-xs text-gray-500">${k.key_preview || '—'}</td>
+        <td class="px-4 py-2"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-${statusColor}-100 text-${statusColor}-800">${k.is_active !== false ? '启用' : '禁用'}</span></td>
+        <td class="px-4 py-2 text-right">
+          <button onclick="editPKey('${k.id}')" class="text-blue-600 hover:underline text-xs mr-2">编辑</button>
+          <button onclick="resetPKey('${k.id}', '${k.name}')" class="text-orange-600 hover:underline text-xs mr-2">重置</button>
+          <button onclick="deletePKey('${k.id}', '${k.name}')" class="text-red-600 hover:underline text-xs">删除</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch {}
+}
+
+function showKeyModal() {
+  pkeyEditingId = null;
+  document.getElementById('pkey-modal-title').textContent = '创建 Provider Key';
+  document.getElementById('pkf-id').value = '';
+  document.getElementById('pkf-name').value = '';
+  document.getElementById('pkf-provider').value = '';
+  document.getElementById('pkf-key').value = '';
+  document.getElementById('pkf-notes').value = '';
+  document.getElementById('pkf-active').checked = true;
+  document.getElementById('pkey-modal').showModal();
+}
+
+async function editPKey(id) {
+  const res = await fetch('/api/gateway/provider-keys', { credentials: 'same-origin' });
+  const keys = await res.json();
+  const k = keys.find(k => k.id === id);
+  if (!k) return;
+  pkeyEditingId = id;
+  document.getElementById('pkey-modal-title').textContent = '编辑 Provider Key';
+  document.getElementById('pkf-id').value = id;
+  document.getElementById('pkf-name').value = k.name;
+  document.getElementById('pkf-provider').value = k.provider || '';
+  document.getElementById('pkf-key').value = '';
+  document.getElementById('pkf-notes').value = k.notes || '';
+  document.getElementById('pkf-active').checked = k.is_active !== false;
+  document.getElementById('pkey-modal').showModal();
+}
+
+document.getElementById('pkey-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    name: document.getElementById('pkf-name').value,
+    provider: document.getElementById('pkf-provider').value,
+    notes: document.getElementById('pkf-notes').value || null,
+    is_active: document.getElementById('pkf-active').checked,
+  };
+  const key = document.getElementById('pkf-key').value;
+  if (key) body.key = key;
+  try {
+    const url = pkeyEditingId ? `/api/gateway/provider-keys/${pkeyEditingId}` : '/api/gateway/provider-keys';
+    const res = await fetch(url, { method: pkeyEditingId ? 'PUT' : 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || '保存失败'); }
+    document.getElementById('pkey-modal').close();
+    showToast('已保存'); loadProviderKeys();
+  } catch (e) { showToast(e.message, 'error'); }
+});
+
+async function resetPKey(id, name) {
+  if (!confirm(`确定重置 "${name}" 的 Key？原 Key 将失效。`)) return;
+  try {
+    const res = await fetch(`/api/gateway/provider-keys/${id}/reset`, { method: 'POST', credentials: 'same-origin' });
+    if (!res.ok) throw new Error('重置失败');
+    showToast('已重置'); loadProviderKeys();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function deletePKey(id, name) {
+  if (!confirm(`确定删除 "${name}"？`)) return;
+  try {
+    const res = await fetch(`/api/gateway/provider-keys/${id}`, { method: 'DELETE', credentials: 'same-origin' });
+    if (!res.ok) throw new Error('删除失败');
+    showToast('已删除'); loadProviderKeys();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+loadModels();
+loadProviderKeys();
+</script>
+{% endblock %}

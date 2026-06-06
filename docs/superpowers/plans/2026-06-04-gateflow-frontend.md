@@ -1,5 +1,7 @@
 # 闸机 GateFlow 前端实现计划
 
+> **⚠️ 已废弃：** 2026-06-06 前端已从 React 迁移到 Jinja2 + htmx + Tailwind CSS，`frontend/` 目录已删除。本计划仅作历史参考。详见 `2026-06-06-frontend-refactor.md`。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 构建闸机 GateFlow 前端管理后台，包含登录、AI 问答（豆包风格）、控制台、网关管理、用户管理、审计日志、用量统计 7 个页面。

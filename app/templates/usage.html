@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}使用统计 — GateFlow{% endblock %}
+{% block nav_usage %}active{% endblock %}
+{% block header_title %}使用统计{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+  <!-- Filters -->
+  <div class="bg-white rounded-lg border border-gray-200 p-4 flex flex-wrap items-end gap-3">
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">维度</label>
+      <select id="f-dimension" onchange="reload()" class="border border-gray-300 rounded px-2 py-1.5 text-sm">
+        <option value="model">按模型</option>
+        <option value="department">按部门</option>
+        <option value="user">按用户</option>
+        <option value="agent_type">按客户端</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">开始日期</label>
+      <input type="date" id="f-from" onchange="reload()" class="border border-gray-300 rounded px-2 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">结束日期</label>
+      <input type="date" id="f-to" onchange="reload()" class="border border-gray-300 rounded px-2 py-1.5 text-sm">
+    </div>
+    <button onclick="reload()" class="bg-blue-600 text-white px-3 py-1.5 rounded text-sm hover:bg-blue-700">刷新</button>
+  </div>
+
+  <!-- Charts -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="bg-white rounded-lg border border-gray-200 p-4">
+      <h3 class="text-sm font-semibold text-gray-700 mb-3">Token 用量（输入/输出）</h3>
+      <div id="chart-bar" style="height: 350px;"></div>
+    </div>
+    <div class="bg-white rounded-lg border border-gray-200 p-4">
+      <h3 class="text-sm font-semibold text-gray-700 mb-3">请求次数占比</h3>
+      <div id="chart-pie" style="height: 350px;"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let barChart, pieChart;
+
+function reload() {
+  const dim = document.getElementById('f-dimension').value;
+  const from = document.getElementById('f-from').value;
+  const to = document.getElementById('f-to').value;
+  const params = new URLSearchParams({ dimension: dim });
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  loadCharts(params.toString());
+}
+
+async function loadCharts(query) {
+  try {
+    const res = await fetch('/api/usage/summary?' + query, { credentials: 'same-origin' });
+    const data = await res.json();
+    const items = data.items || data;
+    if (!items || !items.length) {
+      if (barChart) barChart.clear();
+      if (pieChart) pieChart.clear();
+      return;
+    }
+
+    const labels = items.map(i => i.model || i.department || i.username || i.agent_type_name || '—');
+    const inputTokens = items.map(i => i.input_tokens || 0);
+    const outputTokens = items.map(i => i.output_tokens || 0);
+    const requestCounts = items.map(i => i.request_count || 0);
+
+    // Stacked bar chart
+    if (!barChart) {
+      barChart = echarts.init(document.getElementById('chart-bar'));
+      window.addEventListener('resize', () => barChart.resize());
+    }
+    barChart.setOption({
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+      legend: { data: ['输入 Tokens', '输出 Tokens'] },
+      xAxis: { type: 'category', data: labels, axisLabel: { rotate: labels.length > 5 ? 30 : 0 } },
+      yAxis: { type: 'value' },
+      series: [
+        { name: '输入 Tokens', type: 'bar', stack: 'total', data: inputTokens, itemStyle: { color: '#3b82f6' } },
+        { name: '输出 Tokens', type: 'bar', stack: 'total', data: outputTokens, itemStyle: { color: '#10b981' } },
+      ],
+    }, true);
+
+    // Pie chart
+    if (!pieChart) {
+      pieChart = echarts.init(document.getElementById('chart-pie'));
+      window.addEventListener('resize', () => pieChart.resize());
+    }
+    pieChart.setOption({
+      tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+      series: [{
+        type: 'pie', radius: ['40%', '70%'],
+        data: labels.map((l, i) => ({ name: l, value: requestCounts[i] })),
+        label: { show: true, formatter: '{b}\n{d}%' },
+      }],
+    }, true);
+  } catch (e) { console.error('loadCharts:', e); }
+}
+
+reload();
+</script>
+{% endblock %}
