@@ -105,35 +105,31 @@ api_key  = "gf_your_enterprise_token"        # 闸机发的 Token
 
 **参考业界头部做法**：OpenAI Enterprise、Anthropic Console、Cloudflare AI Gateway、AWS Bedrock 都默认不存 body 或做受控访问。GateFlow 选"存加密 + 受控访问"是因为企业内部 debug 经常需要完整上下文。
 
-**配置开关**（`.env`）：
-
-| 变量 | 必填 | 默认 | 说明 |
-|------|------|------|------|
-| `DATABASE_URL` | ✅ | — | PostgreSQL 异步连接串 |
-| `JWT_SECRET_KEY` | ✅ | — | JWT 签名密钥。**至少 32 字符**，启动时检测占位符（`change-me` / `your-` / `replace` / `placeholder` 等关键词即 fail-fast） |
-| `ENCRYPTION_KEY` | ✅ | — | Fernet 格式（44 字节 base64），加密上游 API Key 与审计日志 body |
-| `HMAC_SECRET` | ✅ | — | 至少 32 字节随机串，HMAC-SHA256 哈希客户端 API Key |
-| `ALLOWED_ORIGINS` | ❌ | `http://localhost:3000` | CORS 白名单，逗号分隔多个 origin |
-| `DB_POOL_SIZE` | ❌ | `20` | SQLAlchemy 连接池大小 |
-| `DB_MAX_OVERFLOW` | ❌ | `20` | 超出 pool_size 后的最大溢出 |
-| `DB_POOL_RECYCLE_SECONDS` | ❌ | `1800` | 连接回收间隔，防止被 PG idle-timeout 杀掉 |
-| `AUDIT_LOG_FULL_BODY` | ❌ | `false` | `true` 时写加密 body；`false` 时只写 80 字符 preview |
-| `AUDIT_LOG_RETENTION_DAYS` | ❌ | `90` | 日志保留天数（v0.2.0 实现自动清理） |
-| `ENABLE_PII_REDACTION` | ❌ | `false` | 启用 Presidio 自动 PII 脱敏（v0.2.0） |
-
 **API Key 与上游 Key**：以 Fernet 加密（上游 Key）+ HMAC 哈希（API Key）形式存储，**任何 list 接口都不返回明文**。完整 Key 仅在创建时一次性返回。
 
 ## 技术栈
 
-- **后端**：Python 3.13 · FastAPI · SQLAlchemy (async) · PostgreSQL
-- **前端**：React 18 · TypeScript · Vite · Ant Design
+| 依赖 | 版本 | 用途 |
+|------|------|------|
+| FastAPI | 0.136.3 | Web 框架 |
+| Uvicorn | 0.48.0 | ASGI 服务器 |
+| SQLAlchemy[asyncio] | 2.0.50 | ORM（async 模式） |
+| asyncpg | 0.31.0 | PostgreSQL 异步驱动 |
+| Pydantic | 2.13.4 | 数据校验 |
+| httpx | 0.28.1 | 异步 HTTP 客户端 |
+| python-jose[cryptography] | 3.5.0 | JWT 签发/验证 |
+| passlib[bcrypt] | 1.7.4 | 密码哈希 |
+| cryptography | — | Fernet 加密 + HMAC-SHA256 |
+| Jinja2 | 3.1.6 | HTML 模板引擎 |
+| Tailwind CSS v4 | CDN | 样式 |
+| htmx 2.0 | CDN | 交互增强 |
+| ECharts 5 | CDN | 图表 |
 
 ## 快速开始
 
 ### 前置环境
 
 - Python 3.13+
-- Node.js 20+
 - PostgreSQL 14+（运行中）
 
 ---
@@ -144,8 +140,8 @@ api_key  = "gf_your_enterprise_token"        # 闸机发的 Token
 # 1. 克隆并配置
 git clone https://github.com/ai-dev-dot/gateflow.git
 cd GateFlow
-cp backend/.env.example backend/.env
-# 编辑 backend/.env，至少需要填 DATABASE_URL 和 JWT_SECRET_KEY
+cp .env.example .env
+# 编辑 .env，至少需要填 DATABASE_URL、JWT_SECRET_KEY、ENCRYPTION_KEY、HMAC_SECRET
 
 # 2. 安装依赖（仅首次）
 bash setup.sh
@@ -156,29 +152,12 @@ bash start.sh
 
 ### Windows
 
-两种方式任选其一：
-
-**方式 A：Git Bash（推荐，命令与 macOS/Linux 一致）**
-
-```bash
-# 在 Git Bash 终端运行
-git clone https://github.com/ai-dev-dot/gateflow.git
-cd GateFlow
-cp backend/.env.example backend/.env
-# 用记事本/VSCode 编辑 backend/.env
-
-bash setup.sh
-bash start.sh
-```
-
-**方式 B：cmd.exe + .bat 脚本**
-
 ```cmd
 REM 在 cmd.exe 中运行
 git clone https://github.com/ai-dev-dot/gateflow.git
 cd GateFlow
-copy backend\.env.example backend\.env
-REM 编辑 backend\.env
+copy .env.example .env
+REM 编辑 .env
 
 setup.bat
 start.bat
@@ -186,31 +165,70 @@ start.bat
 
 ---
 
-启动后访问：
+启动后访问：`http://localhost:8000`
 
-- 前端：`http://localhost:3000`
-- 后端：`http://localhost:8000`
+- 未登录自动跳转到登录页
+- 默认管理员账号：`admin` / `admin123`（首次登录后请改密）
 - API 文档：`http://localhost:8000/docs`
 
-默认管理员账号：`admin` / `admin123`（首次登录后请改密）
+## 项目结构
+
+```
+GateFlow/
+├── app/
+│   ├── main.py                 # FastAPI 应用入口
+│   ├── config.py               # 配置管理（.env）
+│   ├── database.py             # 数据库连接
+│   ├── templates_config.py     # Jinja2 模板配置
+│   ├── middleware/
+│   │   ├── auth_middleware.py   # API 认证（JWT + API Key + Cookie）
+│   │   └── session.py          # 页面 Cookie 会话
+│   ├── models/                 # SQLAlchemy 模型
+│   ├── schemas/                # Pydantic schema
+│   ├── routers/                # API 路由 + 页面路由
+│   ├── services/               # 业务逻辑
+│   │   └── provider_adapters/  # LLM 协议适配器
+│   ├── templates/              # Jinja2 HTML 模板
+│   ├── static/                 # CSS/JS
+│   └── utils/                  # 工具函数
+├── tests/                      # pytest 测试
+├── .env.example                # 环境变量模板
+├── requirements.txt            # Python 依赖
+├── setup.bat / setup.sh        # 一键安装
+├── start.bat / start.sh        # 一键启动
+└── CLAUDE.md                   # AI 开发指南
+```
+
+## 请求路径
+
+| 路径 | 说明 |
+|------|------|
+| `POST /v1/chat/completions` | OpenAI 兼容网关 |
+| `POST /v1/messages` | Anthropic 兼容网关 |
+| `POST /api/chat/conversations/{id}/messages/stream` | Web AI 对话（流式） |
+| `GET /pages/*` | 管理页面（HTML） |
+| `GET /` | 已登录 → 首页，未登录 → 登录页 |
 
 ## 系统架构
 
 ```
-┌─────────────────┐    ┌─────────────────────────────────────────┐    ┌─────────────────┐
-│                 │    │           闸机 GateFlow                 │    │                 │
-│  员工/业务系统  ├────►  ┌─────────┐  ┌─────────┐  ┌─────────┐  ├────►  大模型服务商   │
-│                 │    │  │ 统一网关 │  │ 权限中心 │  │ 审计日志 │  │    │  OpenAI       │
-└─────────────────┘    │  └─────────┘  └─────────┘  └─────────┘  │    │  DeepSeek      │
-                       │                                         │    │  Claude        │
-                       │  ┌─────────┐  ┌─────────┐  ┌─────────┐  │    │  本地大模型    │
-                       │  │ 成本管控 │  │ RAG引擎 │  │ 工具调用 │  │    └─────────────────┘
-                       │  └─────────┘  └─────────┘  └─────────┘  │
-                       │                                         │    ┌─────────────────┐
-                       │  ┌─────────────────────────────────┐    │    │                 │
-                       │  │      企业内部系统集成           ├────┼────►  企业内部系统   │
-                       │  └─────────────────────────────────┘    │    │  数据库/知识库  │
-                       └─────────────────────────────────────────┘    └─────────────────┘
+客户端（浏览器 / Agent / 业务系统）
+        │
+        ▼
+┌─────────────────────────────────────┐
+│         闸机 GateFlow               │
+│  ┌─────────┐  ┌─────────┐  ┌──────┐│
+│  │ 统一网关 │  │ 权限中心 │  │审计日志││
+│  └────┬────┘  └─────────┘  └──────┘│
+│       │                             │
+│  ┌────┴────┐  ┌─────────┐  ┌──────┐│
+│  │ Key 池  │  │ 用量统计 │  │Web 对话││
+│  └─────────┘  └─────────┘  └──────┘│
+└───────────────┬─────────────────────┘
+                │
+    ┌───────────┼───────────┐
+    ▼           ▼           ▼
+DeepSeek     OpenAI      更多模型...
 ```
 
 ## 贡献指南
