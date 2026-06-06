@@ -556,7 +556,7 @@ async with engine.begin() as conn:
 | P2-1 | TODO | — | |
 | P2-2 | DONE | 03c2fbb | gateway.py → model_configs.py，路径前缀不变 |
 | P2-3 | DONE | 032227b | 抽 _build_summary_query 静态方法，+7 tests 覆盖 4 维度 |
-| P2-4 | TODO | — | |
+| P2-4 | DONE | f3da9fd | 抽 app/utils/tokens.estimate_tokens，+9 tests；附带修 None/int 被 str() 误估 1 token 的 bug |
 | P2-5 | TODO | — | |
 | P2-6 | TODO | — | |
 | P2-7 | TODO | — | |
