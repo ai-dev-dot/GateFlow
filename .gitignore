@@ -63,3 +63,7 @@ Desktop.ini
 # === gstack / Claude Code ===
 .claude/
 .gstack/
+backups/
+backend/backups/
+backend/backups2/
+/d/APP/GateFlow/backend/backups/

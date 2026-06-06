@@ -56,16 +56,18 @@ async def update_backup_config(
     _admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Update backup_dir and/or backup_include_audit_logs (admin only).
+    """Update any of backup_dir, backup_include_audit_logs, pg_dump_path
+    (admin only). Fields not in the request body are left untouched.
+    Fields present but null or "" are explicitly cleared (pg_dump_path
+    → NULL; backup_dir → 422 via Pydantic field validator).
 
     422 if backup_dir is empty/whitespace (Pydantic field validator).
     """
+    # Translate Pydantic's "present in body" semantics to a kwargs dict
+    # the service can read. We pass the model itself so the service can
+    # call ``data.model_fields_set`` to know which keys were supplied.
     try:
-        return await update_config(
-            db,
-            backup_dir=data.backup_dir,
-            backup_include_audit_logs=data.backup_include_audit_logs,
-        )
+        return await update_config(db, data=data)
     except ValueError as e:
         # Defense in depth — pydantic field_validator should catch this first.
         raise HTTPException(status_code=422, detail=str(e)) from e
@@ -79,19 +81,20 @@ async def trigger_backup(
     """Trigger a pg_dump run and write to backup_dir (admin only).
 
     - 501 if DATABASE_URL is not PostgreSQL (e.g. SQLite test env)
-    - 500 if pg_dump fails or binary is missing
+    - 500 if pg_dump fails, binary path is invalid, or subprocess errors.
+      The detail field carries the service's human-readable message so
+      the admin UI can show it directly.
     """
     try:
         return await run_backup(db)
     except BackupNotSupportedError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
     except BackupFailedError as e:
-        # Truncate stderr to 500 chars to keep the response body bounded.
-        stderr_excerpt = (e.stderr or "")[:500]
-        raise HTTPException(
-            status_code=500,
-            detail=f"pg_dump failed (rc={e.returncode}): {stderr_excerpt}",
-        ) from e
+        # Prefer the service's message (path invalid, binary missing,
+        # etc.) over a generic "pg_dump failed". Only when no message
+        # is set do we synthesize one from returncode/stderr.
+        detail = str(e).strip() or f"pg_dump failed (rc={e.returncode}): {(e.stderr or '')[:500]}"
+        raise HTTPException(status_code=500, detail=detail) from e
 
 
 @router.get("/history", response_model=list[BackupFileInfo])

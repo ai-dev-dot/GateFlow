@@ -1,8 +1,10 @@
 """Pydantic schemas for the backup feature.
 
-SystemConfigUpdate is intentionally a "partial update" — both fields are
-Optional, so PUTs can update one at a time. The router/service still
-validates non-empty backup_dir when it is supplied.
+SystemConfigUpdate is a "partial update" — the service uses
+``model_fields_set`` to know which fields the request body actually
+contained. Fields NOT in the body are left untouched in the DB. Fields
+that are present but null/empty are explicitly cleared (e.g. to clear
+pg_dump_path, send ``{"pg_dump_path": null}`` or an empty string).
 """
 
 from datetime import datetime
@@ -20,7 +22,11 @@ class SystemConfigResponse(BaseModel):
 
 
 class SystemConfigUpdate(BaseModel):
-    """Partial update — all fields optional. Empty strings rejected."""
+    """Partial update — fields default to None.
+
+    Use ``instance.model_fields_set`` to know which fields the client
+    sent (vs. left out). See ``backup_service.update_config``.
+    """
 
     backup_dir: str | None = None
     backup_include_audit_logs: bool | None = None
@@ -39,15 +45,9 @@ class SystemConfigUpdate(BaseModel):
     @field_validator("pg_dump_path")
     @classmethod
     def _strip_pg_dump_path(cls, v: str | None) -> str | None:
-        # Empty string from UI = "clear it". Treat as None. Whitespace-only
-        # also rejected so admin gets clear feedback rather than a silently
-        # blank path.
         if v is None:
             return None
-        stripped = v.strip()
-        if not stripped:
-            return None
-        return stripped
+        return v.strip()  # "" stays ""; service treats "" as "clear"
 
 
 class BackupFileInfo(BaseModel):

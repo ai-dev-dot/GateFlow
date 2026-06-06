@@ -119,32 +119,34 @@ async def get_config(db: AsyncSession) -> SystemConfig:
 async def update_config(
     db: AsyncSession,
     *,
-    backup_dir: str | None = None,
-    backup_include_audit_logs: bool | None = None,
-    pg_dump_path: str | None = None,
+    data,  # SystemConfigUpdate (avoiding circular import on type)
 ) -> SystemConfig:
-    """Update the singleton config. All fields optional (partial update).
+    """Update the singleton config from a validated SystemConfigUpdate.
 
-    To CLEAR ``pg_dump_path``, pass an empty string. The router schema
-    maps "" → None before reaching this function.
+    Uses ``data.model_fields_set`` to distinguish "field absent from
+    body" (no-op) from "field present but null/empty" (clear the DB
+    value to NULL). Pydantic v2's ``model_fields_set`` reflects the
+    raw keys that appeared in the incoming JSON, so the
+    field-validator-stripped value of "" or null still counts as
+    "present".
     """
     config = await get_config(db)
+    set_fields = data.model_fields_set
 
-    if backup_dir is not None:
-        stripped = backup_dir.strip()
+    if "backup_dir" in set_fields:
+        stripped = (data.backup_dir or "").strip()
         if not stripped:
             raise ValueError("backup_dir must not be empty")
         config.backup_dir = stripped
 
-    if backup_include_audit_logs is not None:
-        config.backup_include_audit_logs = backup_include_audit_logs
+    if "backup_include_audit_logs" in set_fields:
+        config.backup_include_audit_logs = bool(data.backup_include_audit_logs)
 
-    if pg_dump_path is not None:
-        # Schema layer has already mapped "" → None and stripped whitespace.
-        # We just assign — the run_backup check catches "file doesn't exist"
-        # at call time, not at config-save time, so admin can save a path
-        # before the file is reachable (e.g. before a service restart).
-        config.pg_dump_path = pg_dump_path
+    if "pg_dump_path" in set_fields:
+        # Empty string or null → clear to NULL; non-empty → use as-is
+        # (schema validator already stripped surrounding whitespace).
+        raw = data.pg_dump_path
+        config.pg_dump_path = raw if raw else None
 
     await db.commit()
     await db.refresh(config)
