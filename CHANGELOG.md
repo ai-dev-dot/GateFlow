@@ -43,6 +43,13 @@
 ### Fixed
 - 修复前后端分页格式不一致
 - 修复 Chat 页面模型字段和对话创建
+
+### Changed (governance)
+- 仓库改为 read-only 开源模式：代码公开但**不接收 PR**
+- 删除 `.github/dependabot.yml`（自动 PR 也算外部贡献）
+- 重写 `CONTRIBUTING.md`：明确说明单人维护、不接受代码贡献
+- `README.md` 贡献指南段改为指向新 CONTRIBUTING.md 的简短说明
+- `SECURITY.md` 软化响应时间承诺（无 SLA），补充 Provider API Key 加密 + audit log body 加密两条已知安全考量
 - 修复 auth 中间件懒加载与 chat/gateway 流式保存的 race condition（AI 消息"消失"问题）
 - 修复测试发现的 7 个 bug
 

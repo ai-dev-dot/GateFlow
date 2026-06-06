@@ -215,9 +215,11 @@ start.bat
 
 ## 贡献指南
 
-我们欢迎任何形式的贡献！无论是提交bug、提出新功能、改进文档还是提交代码。
-
-请先阅读我们的 CONTRIBUTING.md 了解如何开始。
+> 本仓库**不接收代码贡献**（不接受 Pull Request）。代码以只读方式
+> 公开发布，供阅读、学习、作为本地 fork 起点。如需报告 bug 或讨论
+> 设计，欢迎开 [Issue](../../issues)（不保证回复）。
+>
+> 详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 许可证
 

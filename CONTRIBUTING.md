@@ -1,58 +1,50 @@
 # 贡献指南
 
-感谢你考虑为 GateFlow 做贡献！
+> **这是一个个人维护项目，代码以只读方式公开发布在 GitHub 上。**
+>
+> 本仓库**不接收任何形式的代码贡献**——不接受 Pull Request，不接受
+> 协作者邀请，不接受代码层面的 patch 建议。下面的指南仅供你**阅读
+> 代码 / 本地 fork 自用**时参考。
 
-## 开发环境
+## 项目状态
 
-### 后端
-- Python 3.13
-- PostgreSQL 14+
-- 推荐：uv / poetry 管理依赖
+- **作者**：[@ai-dev-dot](https://github.com/ai-dev-dot)（个人项目）
+- **维护模式**：唯一维护者，单人决策
+- **公开目的**：代码可读、可学习、可作为本地 fork 起点
+- **不接受的原因**：单人维护、PR review 成本高、架构决策需保持一致
 
-### 前端
-- Node.js 24
-- TypeScript 5.6+
+## 如果你找到了 bug 或者想提建议
 
-### 启动
+欢迎开 [Issue](../../issues) 讨论，但请理解：
 
-参见 [README 快速开始](README.md#快速开始)。
+- **不保证回复**——这是一个业余项目，维护者有本职工作
+- **不接受针对该 Issue 的代码 PR**——即使有附议，也不会被合并
+- 你可以**自己 fork 后修复**——本项目许可证允许这样做（见 [LICENSE](LICENSE)）
 
-## 提交流程
-
-1. Fork 仓库
-2. 创建特性分支（`git checkout -b feat/xxx`）
-3. 提交改动（commit message 建议前缀：`feat:` / `fix:` / `docs:` / `refactor:` / `test:`）
-4. 推送到 fork
-5. 提交 Pull Request，描述改动原因、影响范围和测试情况
-
-## 代码规范
-
-### 后端
-- 遵循 PEP 8
-- 异步优先（FastAPI + SQLAlchemy async）
-- Service 层负责业务逻辑，Router 层只做参数转发和鉴权
-- 数据库变更需同步更新 `app/models/` 和迁移脚本
-
-### 前端
-- TypeScript 严格模式（`strict: true`）
-- React 函数组件 + Hooks，避免 class 组件
-- Ant Design 组件库，使用中文 locale（`zh_CN`）
-- 状态管理用 Zustand，避免 Redux 样板代码
-
-## 架构决策
-
-任何架构级变更（数据库表结构、API 协议、模块拆分、新增 provider）请先开 issue 讨论，
-避免直接动代码。设计文档同步维护在 `docs/superpowers/specs/`。
-
-## Bug 报告
-
-提交 issue 时请包含：
+有用的 Issue 通常包含：
 - 复现步骤
 - 预期行为 vs 实际行为
 - 环境信息（后端版本、数据库版本、操作系统）
 - 报错日志或截图
 
-## 联系方式
+## 安全漏洞
 
-- GitHub Issues: 公开问题、Bug、功能请求
-- 详见 [SECURITY.md](SECURITY.md) 报告安全问题
+**请勿在公开 issue 中披露安全漏洞。** 详见 [SECURITY.md](SECURITY.md)。
+
+## 本地开发
+
+虽然不接受代码贡献，但代码本身是开源的，你可以本地 fork 和运行：
+
+### 后端
+- Python 3.13
+- PostgreSQL 14+（测试可降级到 SQLite）
+- 参见 [README 快速开始](README.md#快速开始)
+
+### 前端
+- Node.js 24
+- TypeScript 5.6+
+
+## 许可证
+
+本项目基于 [LICENSE](LICENSE) 文件中的许可证发布。任何 fork / 本地修改
+**仅受该许可证约束**，与本仓库的协作流程无关。
