@@ -87,8 +87,8 @@ function reload() {
   const from = document.getElementById('f-from').value;
   const to = document.getElementById('f-to').value;
   const params = new URLSearchParams({ dimension: currentDim });
-  if (from) params.set('from', from);
-  if (to) params.set('to', to);
+  if (from) params.set('start_date', from);
+  if (to) params.set('end_date', to);
   loadCharts(params.toString());
   updateRangeHint(from, to);
 }
