@@ -2,7 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth'
 
 /** admin 专属路由前缀 */
-const adminPaths = ['/gateway', '/users', '/audit', '/usage', '/api-keys']
+const adminPaths = ['/gateway', '/users', '/audit', '/usage', '/api-keys', '/backup']
 
 interface ProtectedRouteProps {
   children: React.ReactNode

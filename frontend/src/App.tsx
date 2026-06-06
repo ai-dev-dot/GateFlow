@@ -10,6 +10,7 @@ import Users from './pages/Users'
 import Audit from './pages/Audit'
 import Usage from './pages/Usage'
 import ApiKeys from './pages/ApiKeys'
+import Backup from './pages/Backup'
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
         <Route path="audit" element={<Audit />} />
         <Route path="usage" element={<Usage />} />
         <Route path="api-keys" element={<ApiKeys />} />
+        <Route path="backup" element={<Backup />} />
       </Route>
     </Routes>
   )

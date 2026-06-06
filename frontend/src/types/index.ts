@@ -172,3 +172,28 @@ export interface PaginatedResponse<T> {
   page: number;
   page_size: number;
 }
+
+// ---------------------
+// 数据库备份
+// ---------------------
+
+export interface SystemConfig {
+  backup_dir: string;
+  backup_include_audit_logs: boolean;
+  updated_at: string;
+}
+
+export interface BackupResult {
+  filename: string;
+  size_bytes: number;
+  duration_ms: number;
+  tables_dumped: number;
+  excluded_audit_logs: boolean;
+  path: string;
+}
+
+export interface BackupFileInfo {
+  filename: string;
+  size_bytes: string;
+  mtime: string;
+}

@@ -13,6 +13,7 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   LockOutlined,
+  DatabaseOutlined,
 } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/auth'
 import { changePassword } from '@/api/auth'
@@ -29,6 +30,7 @@ const allMenuItems = [
   { key: '/audit', icon: <AuditOutlined />, label: 'LLM 调用日志', roles: ['admin'] },
   { key: '/usage', icon: <BarChartOutlined />, label: '使用统计', roles: ['admin'] },
   { key: '/api-keys', icon: <KeyOutlined />, label: 'API Key', roles: ['admin'] },
+  { key: '/backup', icon: <DatabaseOutlined />, label: '数据库备份', roles: ['admin'] },
 ]
 
 export default function AppLayout() {

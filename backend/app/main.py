@@ -12,6 +12,7 @@ from app.routers.anthropic_forward import router as anthropic_forward_router
 from app.routers.api_keys import router as api_keys_router
 from app.routers.audit import router as audit_router
 from app.routers.auth import router as auth_router
+from app.routers.backup import router as backup_router
 from app.routers.chat import router as chat_router
 from app.routers.gateway_forward import router as gateway_forward_router
 from app.routers.model_configs import router as model_configs_router
@@ -90,6 +91,7 @@ app.include_router(audit_router)
 app.include_router(usage_router)
 app.include_router(chat_router)
 app.include_router(agent_types_router)
+app.include_router(backup_router)
 
 
 @app.get("/health")

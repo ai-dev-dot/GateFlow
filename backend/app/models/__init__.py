@@ -5,6 +5,7 @@ from app.models.base import Base, TimestampMixin
 from app.models.chat import Conversation, Message
 from app.models.gateway import ModelConfig
 from app.models.provider_key import ProviderAPIKey
+from app.models.system_config import SystemConfig
 from app.models.user import Department, Role, User
 
 __all__ = [
@@ -21,4 +22,5 @@ __all__ = [
     "AuditLog",
     "Conversation",
     "Message",
+    "SystemConfig",
 ]
