@@ -27,6 +27,12 @@ from app.utils.tokens import estimate_tokens
 logger = logging.getLogger(__name__)
 
 
+# P1-5: cap the per-request history pull to protect the LLM context window
+# and the DB read cost on long conversations. System messages are always
+# included regardless of the cap.
+MAX_HISTORY_MESSAGES = 50
+
+
 class ChatService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -71,6 +77,38 @@ class ChatService:
         )
         return list(result.scalars().all())
 
+    async def _get_capped_history(self, conversation_id: UUID) -> list[Message]:
+        """Return system messages + the most recent MAX_HISTORY_MESSAGES
+        non-system messages for a conversation, in chronological order.
+
+        P1-5: caps the per-request history pull to protect the LLM
+        context window and DB read cost on long conversations. System
+        messages are always included regardless of the cap (they set
+        the assistant's persona and rarely change).
+        """
+        system_msgs_result = await self.db.execute(
+            select(Message)
+            .where(
+                Message.conversation_id == conversation_id,
+                Message.role == "system",
+            )
+            .order_by(Message.created_at)
+        )
+        system_msgs = list(system_msgs_result.scalars().all())
+
+        recent_result = await self.db.execute(
+            select(Message)
+            .where(
+                Message.conversation_id == conversation_id,
+                Message.role != "system",
+            )
+            .order_by(Message.created_at.desc())
+            .limit(MAX_HISTORY_MESSAGES)
+        )
+        recent_msgs = list(recent_result.scalars().all())
+
+        return system_msgs + list(reversed(recent_msgs))
+
     async def delete_conversation(self, conversation_id: UUID, user: User) -> bool:
         result = await self.db.execute(
             select(Conversation).where(
@@ -112,12 +150,7 @@ class ChatService:
         self.db.add(user_message)
         await self.db.commit()
 
-        result = await self.db.execute(
-            select(Message)
-            .where(Message.conversation_id == conversation_id)
-            .order_by(Message.created_at)
-        )
-        history = result.scalars().all()
+        history = await self._get_capped_history(conversation_id)
         messages = [{"role": msg.role, "content": msg.content} for msg in history]
 
         ai_content, tokens = await self._call_llm(conversation.model, messages)
@@ -225,12 +258,7 @@ class ChatService:
         self.db.add(user_message)
         await self.db.commit()
 
-        result = await self.db.execute(
-            select(Message)
-            .where(Message.conversation_id == conversation_id)
-            .order_by(Message.created_at)
-        )
-        history = result.scalars().all()
+        history = await self._get_capped_history(conversation_id)
         messages = [{"role": msg.role, "content": msg.content} for msg in history]
 
         # Model config

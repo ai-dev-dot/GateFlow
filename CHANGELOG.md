@@ -56,6 +56,7 @@
 
 ### Changed (perf)
 - **P1-4 chat N+1**：`ChatService.get_messages` 改契约为 `list[Message] | None`——`None` 表示 404（对话不存在或非本人），`[]` 表示对话存在但为空。Router 不再为了消歧而全量拉 `get_conversations()`，404 路径从 O(N) 降到 1 次索引查询
+- **P1-5 chat 历史 LIMIT 50**：抽 `ChatService._get_capped_history()` helper，`send_message` / `send_message_stream` 都通过它拉历史。**策略**：system 消息全保留，user/assistant 只取最近 50 条按时间正序。1000 条消息的对话从 1MB 文本降到 ≤50 条（按 4KB/条估 = 200KB），保护 LLM context window 和 DB 读开销
 - 修复 auth 中间件懒加载与 chat/gateway 流式保存的 race condition（AI 消息"消失"问题）
 - 修复测试发现的 7 个 bug
 
