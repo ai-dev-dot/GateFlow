@@ -26,8 +26,18 @@ function copyToClipboard(text) {
 // Utility: toast notification
 function showToast(message, type = 'success') {
   const toast = document.createElement('div');
-  toast.className = 'fixed top-4 right-4 z-50 px-4 py-2 rounded shadow-lg text-sm font-medium transition-opacity duration-300 ' +
-    (type === 'error' ? 'bg-red-600 text-white' : 'bg-gray-800 text-white');
+  const isError = type === 'error';
+  Object.assign(toast.style, {
+    position: 'fixed', top: '16px', right: '16px', zIndex: '9999',
+    padding: '10px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: '500',
+    fontFamily: 'var(--font-sans)',
+    background: isError ? 'rgba(248, 113, 113, 0.15)' : 'rgba(22, 24, 34, 0.95)',
+    color: isError ? '#f87171' : '#e8eaf0',
+    border: isError ? '1px solid rgba(248, 113, 113, 0.2)' : '1px solid rgba(255,255,255,0.1)',
+    backdropFilter: 'blur(12px)',
+    boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+    transition: 'opacity 0.3s',
+  });
   toast.textContent = message;
   document.body.appendChild(toast);
   setTimeout(() => {
@@ -85,7 +95,7 @@ function showFormLevelError(formEl, msg) {
   let errDiv = formEl.querySelector('.form-level-error');
   if (!errDiv) {
     errDiv = document.createElement('div');
-    errDiv.className = 'form-level-error bg-red-50 text-red-700 text-sm rounded p-3 mb-3 border border-red-200';
+    errDiv.className = 'form-level-error gf-alert gf-alert-error mb-3';
     const firstChild = formEl.querySelector('input, select, textarea, .space-y-3, .grid');
     if (firstChild) {
       firstChild.parentNode.insertBefore(errDiv, firstChild);
@@ -113,7 +123,8 @@ function showFormErrors(formEl, detail) {
       if (input) {
         input.classList.add('border-red-500');
         const errDiv = document.createElement('div');
-        errDiv.className = 'field-error text-red-600 text-xs mt-1';
+        errDiv.className = 'field-error text-xs mt-1';
+        errDiv.style.color = 'var(--danger)';
         errDiv.textContent = msg;
         // 插入到 input 的父容器末尾
         input.closest('div')?.appendChild(errDiv);
@@ -157,4 +168,9 @@ document.addEventListener('DOMContentLoaded', () => {
       link.classList.add('active');
     }
   });
+});
+
+// Re-initialize Lucide icons after htmx content swaps
+document.addEventListener('htmx:afterSwap', () => {
+  if (typeof lucide !== 'undefined') lucide.createIcons();
 });

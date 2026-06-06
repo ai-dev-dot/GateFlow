@@ -4,80 +4,117 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}GateFlow{% endblock %}</title>
-  <!-- Tailwind CSS v4 CDN -->
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- htmx 2.0 CDN -->
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
-  <!-- ECharts 5 CDN (loaded on all pages, used by chart pages) -->
+  <!-- ECharts 5 CDN -->
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="stylesheet" href="/static/css/app.css">
   {% block head %}{% endblock %}
 </head>
-<body class="bg-gray-50 text-gray-900 min-h-screen flex">
+<body class="min-h-screen flex" style="background: var(--bg-page); color: var(--text-primary);">
   {% block body %}
   <!-- Sidebar -->
-  <aside id="sidebar" class="w-56 bg-gray-900 text-gray-100 flex flex-col shrink-0 min-h-screen transition-all duration-200">
-    <div class="h-14 flex items-center px-4 border-b border-gray-700">
-      <span class="text-lg font-bold tracking-wide">GF <span class="text-sm font-normal text-gray-400">闸机</span></span>
+  <aside id="sidebar" class="w-56 flex flex-col shrink-0 min-h-screen" style="background: var(--bg-sidebar); border-right: 1px solid var(--border);">
+    <!-- Brand -->
+    <div class="h-14 flex items-center px-5 border-b" style="border-color: var(--border);">
+      <div class="flex items-center gap-2.5">
+        <div class="w-7 h-7 rounded-md flex items-center justify-center" style="background: linear-gradient(135deg, var(--accent), var(--accent-dark));">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>
+        <div>
+          <span class="text-sm font-bold tracking-wide" style="color: var(--text-primary);">GateFlow</span>
+          <span class="block text-[10px] font-medium" style="color: var(--text-muted); letter-spacing: 0.08em;">AI GATEWAY</span>
+        </div>
+      </div>
     </div>
-    <nav class="flex-1 py-2 text-sm">
+
+    <!-- Navigation -->
+    <nav class="flex-1 py-3 px-2 space-y-0.5">
       <a href="/pages/chat" class="sidebar-link {% block nav_chat %}{% endblock %}">
-        <span class="sidebar-icon">💬</span> AI 对话
+        <i data-lucide="message-square" class="sidebar-icon"></i> AI 对话
       </a>
       {% if user and user.role and user.role.name == 'admin' %}
       <a href="/pages/dashboard" class="sidebar-link {% block nav_dashboard %}{% endblock %}">
-        <span class="sidebar-icon">📊</span> 全局看板
+        <i data-lucide="bar-chart-3" class="sidebar-icon"></i> 全局看板
       </a>
       {% endif %}
       {% if user and (not user.role or user.role.name != 'admin') %}
       <a href="/pages/my-usage" class="sidebar-link {% block nav_my_usage %}{% endblock %}">
-        <span class="sidebar-icon">📈</span> 我的用量
+        <i data-lucide="trending-up" class="sidebar-icon"></i> 我的用量
       </a>
       {% endif %}
       {% if user and user.role and user.role.name == 'admin' %}
       <a href="/pages/gateway" class="sidebar-link {% block nav_gateway %}{% endblock %}">
-        <span class="sidebar-icon">🔗</span> 大模型管理
+        <i data-lucide="plug" class="sidebar-icon"></i> 大模型管理
       </a>
       <a href="/pages/users" class="sidebar-link {% block nav_users %}{% endblock %}">
-        <span class="sidebar-icon">👥</span> 人员管理
+        <i data-lucide="users" class="sidebar-icon"></i> 人员管理
       </a>
       <a href="/pages/audit" class="sidebar-link {% block nav_audit %}{% endblock %}">
-        <span class="sidebar-icon">📋</span> LLM 调用日志
+        <i data-lucide="file-text" class="sidebar-icon"></i> LLM 调用日志
       </a>
       <a href="/pages/usage" class="sidebar-link {% block nav_usage %}{% endblock %}">
-        <span class="sidebar-icon">📉</span> 使用统计
+        <i data-lucide="pie-chart" class="sidebar-icon"></i> 使用统计
       </a>
       <a href="/pages/api-keys" class="sidebar-link {% block nav_api_keys %}{% endblock %}">
-        <span class="sidebar-icon">🔑</span> API Key
+        <i data-lucide="key" class="sidebar-icon"></i> API Key
       </a>
       <a href="/pages/backup" class="sidebar-link {% block nav_backup %}{% endblock %}">
-        <span class="sidebar-icon">💾</span> 数据库备份
+        <i data-lucide="database" class="sidebar-icon"></i> 数据库备份
       </a>
       {% endif %}
     </nav>
+
+    <!-- User footer -->
+    {% if user %}
+    <div class="px-3 py-3 flex items-center justify-between text-xs" style="border-top: 1px solid var(--border);">
+      <div class="flex items-center gap-2">
+        <div class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold" style="background: var(--accent-subtle); color: var(--accent-light);">
+          {{ user.username[0] | upper }}
+        </div>
+        <span style="color: var(--text-secondary);">{{ user.username }}</span>
+      </div>
+      <a href="/pages/logout" class="flex items-center gap-1 transition-colors" style="color: var(--text-muted);" onmouseover="this.style.color='var(--text-primary)'" onmouseout="this.style.color='var(--text-muted)'">
+        <i data-lucide="log-out" style="width:14px;height:14px;"></i>
+      </a>
+    </div>
+    {% endif %}
   </aside>
 
   <!-- Main content area -->
   <div class="flex-1 flex flex-col min-h-screen">
     <!-- Header -->
-    <header class="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0">
-      <h1 class="text-base font-semibold text-gray-700">{% block header_title %}{% endblock %}</h1>
+    <header class="h-14 flex items-center justify-between px-6 shrink-0" style="background: var(--bg-surface); border-bottom: 1px solid var(--border);">
+      <h1 class="text-sm font-semibold tracking-wide" style="color: var(--text-primary);">{% block header_title %}{% endblock %}</h1>
       <div class="flex items-center gap-4">
         {% if user %}
-        <span class="text-sm text-gray-500">{{ user.username }}</span>
-        <a href="/pages/login" class="text-sm text-gray-400 hover:text-gray-600">退出</a>
+        <span class="text-xs font-mono" style="color: var(--text-muted);">{{ user.username }}</span>
         {% endif %}
       </div>
     </header>
 
     <!-- Page content -->
-    <main class="flex-1 p-6">
+    <main class="flex-1 p-6 overflow-auto" style="background: var(--bg-page);">
       {% block content %}{% endblock %}
     </main>
   </div>
   {% endblock %}
 
   <script src="/static/js/app.js"></script>
+  <script>
+    // Initialize Lucide icons
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  </script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

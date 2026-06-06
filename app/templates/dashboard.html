@@ -7,33 +7,37 @@
 <div class="space-y-6">
   <!-- Stat Cards -->
   <div id="stat-cards" class="grid grid-cols-2 md:grid-cols-4 gap-4">
-    <div class="bg-white rounded-lg border border-gray-200 p-4">
-      <div class="text-xs text-gray-500 mb-1">本月请求数</div>
-      <div id="stat-requests" class="text-2xl font-semibold">—</div>
+    <div class="stat-card gf-animate-in">
+      <div class="stat-label">本月请求数</div>
+      <div id="stat-requests" class="stat-value">—</div>
     </div>
-    <div class="bg-white rounded-lg border border-gray-200 p-4">
-      <div class="text-xs text-gray-500 mb-1">本月 Token 数</div>
-      <div id="stat-tokens" class="text-2xl font-semibold">—</div>
+    <div class="stat-card gf-animate-in gf-animate-in-delay-1">
+      <div class="stat-label">本月 Token 数</div>
+      <div id="stat-tokens" class="stat-value">—</div>
     </div>
-    <div class="bg-white rounded-lg border border-gray-200 p-4">
-      <div class="text-xs text-gray-500 mb-1">模型数量</div>
-      <div id="stat-models" class="text-2xl font-semibold">—</div>
+    <div class="stat-card gf-animate-in gf-animate-in-delay-2">
+      <div class="stat-label">模型数量</div>
+      <div id="stat-models" class="stat-value">—</div>
     </div>
-    <div class="bg-white rounded-lg border border-gray-200 p-4">
-      <div class="text-xs text-gray-500 mb-1">部门数量</div>
-      <div id="stat-depts" class="text-2xl font-semibold">—</div>
+    <div class="stat-card gf-animate-in gf-animate-in-delay-3">
+      <div class="stat-label">部门数量</div>
+      <div id="stat-depts" class="stat-value">—</div>
     </div>
   </div>
 
   <!-- Charts -->
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div class="bg-white rounded-lg border border-gray-200 p-4">
-      <h3 class="text-sm font-semibold text-gray-700 mb-3">模型用量占比</h3>
-      <div id="chart-model-pie" style="height: 300px;"></div>
+    <div class="gf-card gf-animate-in gf-animate-in-delay-3">
+      <div class="gf-card-header">模型用量占比</div>
+      <div class="gf-card-body">
+        <div id="chart-model-pie" style="height: 300px;"></div>
+      </div>
     </div>
-    <div class="bg-white rounded-lg border border-gray-200 p-4">
-      <h3 class="text-sm font-semibold text-gray-700 mb-3">部门用量排名</h3>
-      <div id="chart-dept-bar" style="height: 300px;"></div>
+    <div class="gf-card gf-animate-in gf-animate-in-delay-4">
+      <div class="gf-card-header">部门用量排名</div>
+      <div class="gf-card-body">
+        <div id="chart-dept-bar" style="height: 300px;"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -41,6 +45,11 @@
 
 {% block scripts %}
 <script>
+const CHART_THEME = {
+  textColor: '#8b90a0',
+  lineColor: 'rgba(255,255,255,0.06)',
+};
+
 async function loadDashboard() {
   try {
     const [summary, models, depts] = await Promise.all([
@@ -49,7 +58,6 @@ async function loadDashboard() {
       fetch('/api/users/departments', { credentials: 'same-origin' }).then(r => r.json()),
     ]);
 
-    // Stat cards
     document.getElementById('stat-requests').textContent = (summary.total_requests ?? summary.request_count ?? 0).toLocaleString();
     document.getElementById('stat-tokens').textContent = (summary.total_tokens ?? 0).toLocaleString();
     document.getElementById('stat-models').textContent = models.length;
@@ -64,11 +72,14 @@ async function loadDashboard() {
     if (items && items.length) {
       const chart = echarts.init(document.getElementById('chart-model-pie'));
       chart.setOption({
-        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+        backgroundColor: 'transparent',
+        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)', backgroundColor: '#1c1f2e', borderColor: 'rgba(255,255,255,0.1)', textStyle: { color: '#e8eaf0' } },
         series: [{
           type: 'pie', radius: ['40%', '70%'],
           data: items.map(i => ({ name: i.model || i.alias, value: i.total_tokens || i.request_count || 0 })),
-          label: { show: true, formatter: '{b}\n{d}%' },
+          label: { show: true, formatter: '{b}\n{d}%', color: '#8b90a0', fontSize: 11 },
+          itemStyle: { borderColor: '#161822', borderWidth: 2 },
+          color: ['#6366f1', '#818cf8', '#a5b4fc', '#34d399', '#fbbf24', '#f87171', '#60a5fa', '#c084fc'],
         }],
       });
       window.addEventListener('resize', () => chart.resize());
@@ -84,10 +95,17 @@ async function loadDashboard() {
       const sorted = [...items].sort((a, b) => (a.total_tokens || 0) - (b.total_tokens || 0));
       const chart = echarts.init(document.getElementById('chart-dept-bar'));
       chart.setOption({
-        tooltip: { trigger: 'axis' },
-        xAxis: { type: 'value' },
-        yAxis: { type: 'category', data: sorted.map(i => i.department || i.name || '—') },
-        series: [{ type: 'bar', data: sorted.map(i => i.total_tokens || i.request_count || 0), itemStyle: { color: '#3b82f6' } }],
+        backgroundColor: 'transparent',
+        tooltip: { trigger: 'axis', backgroundColor: '#1c1f2e', borderColor: 'rgba(255,255,255,0.1)', textStyle: { color: '#e8eaf0' } },
+        grid: { left: 80, right: 20, top: 10, bottom: 30 },
+        xAxis: { type: 'value', axisLine: { lineStyle: { color: CHART_THEME.lineColor } }, axisLabel: { color: CHART_THEME.textColor, fontSize: 11 }, splitLine: { lineStyle: { color: CHART_THEME.lineColor } } },
+        yAxis: { type: 'category', data: sorted.map(i => i.department || i.name || '—'), axisLine: { lineStyle: { color: CHART_THEME.lineColor } }, axisLabel: { color: CHART_THEME.textColor, fontSize: 11 } },
+        series: [{
+          type: 'bar',
+          data: sorted.map(i => i.total_tokens || i.request_count || 0),
+          itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#4f46e5' }, { offset: 1, color: '#818cf8' }]), borderRadius: [0, 4, 4, 0] },
+          barWidth: 20,
+        }],
       });
       window.addEventListener('resize', () => chart.resize());
     }

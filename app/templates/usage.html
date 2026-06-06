@@ -77,13 +77,15 @@ async function loadCharts(query) {
       window.addEventListener('resize', () => barChart.resize());
     }
     barChart.setOption({
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-      legend: { data: ['输入 Tokens', '输出 Tokens'] },
-      xAxis: { type: 'category', data: labels, axisLabel: { rotate: labels.length > 5 ? 30 : 0 } },
-      yAxis: { type: 'value' },
+      backgroundColor: 'transparent',
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, backgroundColor: '#1c1f2e', borderColor: 'rgba(255,255,255,0.1)', textStyle: { color: '#e8eaf0' } },
+      legend: { data: ['输入 Tokens', '输出 Tokens'], textStyle: { color: '#8b90a0' } },
+      grid: { left: 60, right: 20, top: 40, bottom: 30 },
+      xAxis: { type: 'category', data: labels, axisLabel: { rotate: labels.length > 5 ? 30 : 0, color: '#8b90a0', fontSize: 11 }, axisLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
+      yAxis: { type: 'value', axisLabel: { color: '#8b90a0', fontSize: 11 }, axisLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
       series: [
-        { name: '输入 Tokens', type: 'bar', stack: 'total', data: inputTokens, itemStyle: { color: '#3b82f6' } },
-        { name: '输出 Tokens', type: 'bar', stack: 'total', data: outputTokens, itemStyle: { color: '#10b981' } },
+        { name: '输入 Tokens', type: 'bar', stack: 'total', data: inputTokens, itemStyle: { color: '#6366f1' } },
+        { name: '输出 Tokens', type: 'bar', stack: 'total', data: outputTokens, itemStyle: { color: '#34d399' } },
       ],
     }, true);
 
@@ -93,11 +95,14 @@ async function loadCharts(query) {
       window.addEventListener('resize', () => pieChart.resize());
     }
     pieChart.setOption({
-      tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+      backgroundColor: 'transparent',
+      tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)', backgroundColor: '#1c1f2e', borderColor: 'rgba(255,255,255,0.1)', textStyle: { color: '#e8eaf0' } },
       series: [{
         type: 'pie', radius: ['40%', '70%'],
         data: labels.map((l, i) => ({ name: l, value: requestCounts[i] })),
-        label: { show: true, formatter: '{b}\n{d}%' },
+        label: { show: true, formatter: '{b}\n{d}%', color: '#8b90a0', fontSize: 11 },
+        itemStyle: { borderColor: '#161822', borderWidth: 2 },
+        color: ['#6366f1', '#818cf8', '#a5b4fc', '#34d399', '#fbbf24', '#f87171', '#60a5fa', '#c084fc'],
       }],
     }, true);
   } catch (e) { console.error('loadCharts:', e); }

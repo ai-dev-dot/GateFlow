@@ -5,25 +5,31 @@
 
 {% block content %}
 <div class="space-y-6">
+  <!-- Stat Cards -->
   <div class="grid grid-cols-2 gap-4 max-w-xl">
-    <div class="bg-white rounded-lg border border-gray-200 p-4">
-      <div class="text-xs text-gray-500 mb-1">本月请求数</div>
-      <div id="stat-requests" class="text-2xl font-semibold">—</div>
+    <div class="stat-card gf-animate-in">
+      <div class="stat-label">本月请求数</div>
+      <div id="stat-requests" class="stat-value">—</div>
     </div>
-    <div class="bg-white rounded-lg border border-gray-200 p-4">
-      <div class="text-xs text-gray-500 mb-1">本月 Token 数</div>
-      <div id="stat-tokens" class="text-2xl font-semibold">—</div>
+    <div class="stat-card gf-animate-in gf-animate-in-delay-1">
+      <div class="stat-label">本月 Token 数</div>
+      <div id="stat-tokens" class="stat-value">—</div>
     </div>
   </div>
 
+  <!-- Charts -->
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div class="bg-white rounded-lg border border-gray-200 p-4">
-      <h3 class="text-sm font-semibold text-gray-700 mb-3">本月用量趋势</h3>
-      <div id="chart-trend" style="height: 300px;"></div>
+    <div class="gf-card gf-animate-in gf-animate-in-delay-2">
+      <div class="gf-card-header">本月用量趋势</div>
+      <div class="gf-card-body">
+        <div id="chart-trend" style="height: 300px;"></div>
+      </div>
     </div>
-    <div class="bg-white rounded-lg border border-gray-200 p-4">
-      <h3 class="text-sm font-semibold text-gray-700 mb-3">模型用量占比</h3>
-      <div id="chart-model-pie" style="height: 300px;"></div>
+    <div class="gf-card gf-animate-in gf-animate-in-delay-3">
+      <div class="gf-card-header">模型用量占比</div>
+      <div class="gf-card-body">
+        <div id="chart-model-pie" style="height: 300px;"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -31,6 +37,11 @@
 
 {% block scripts %}
 <script>
+const CHART_THEME = {
+  textColor: '#8b90a0',
+  lineColor: 'rgba(255,255,255,0.06)',
+};
+
 async function loadMyUsage() {
   try {
     const res = await fetch('/api/usage/my-summary', { credentials: 'same-origin' });
@@ -47,14 +58,35 @@ async function loadMyUsage() {
     if (items && items.length) {
       const chart = echarts.init(document.getElementById('chart-trend'));
       chart.setOption({
-        tooltip: { trigger: 'axis' },
-        xAxis: { type: 'category', data: items.map(i => i.date || i.day) },
-        yAxis: { type: 'value' },
+        backgroundColor: 'transparent',
+        tooltip: { trigger: 'axis', backgroundColor: '#1c1f2e', borderColor: 'rgba(255,255,255,0.1)', textStyle: { color: '#e8eaf0' } },
+        grid: { left: 50, right: 20, top: 20, bottom: 30 },
+        xAxis: {
+          type: 'category',
+          data: items.map(i => i.date || i.day),
+          axisLine: { lineStyle: { color: CHART_THEME.lineColor } },
+          axisLabel: { color: CHART_THEME.textColor, fontSize: 11 },
+        },
+        yAxis: {
+          type: 'value',
+          axisLine: { lineStyle: { color: CHART_THEME.lineColor } },
+          axisLabel: { color: CHART_THEME.textColor, fontSize: 11 },
+          splitLine: { lineStyle: { color: CHART_THEME.lineColor } },
+        },
         series: [{
-          type: 'line', areaStyle: { opacity: 0.15 },
+          type: 'line',
+          areaStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: 'rgba(99, 102, 241, 0.25)' },
+              { offset: 1, color: 'rgba(99, 102, 241, 0.02)' },
+            ]),
+          },
           data: items.map(i => i.total_tokens || 0),
-          itemStyle: { color: '#3b82f6' },
+          itemStyle: { color: '#6366f1' },
+          lineStyle: { width: 2 },
           smooth: true,
+          symbol: 'circle',
+          symbolSize: 6,
         }],
       });
       window.addEventListener('resize', () => chart.resize());
@@ -69,11 +101,14 @@ async function loadMyUsage() {
     if (items && items.length) {
       const chart = echarts.init(document.getElementById('chart-model-pie'));
       chart.setOption({
-        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+        backgroundColor: 'transparent',
+        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)', backgroundColor: '#1c1f2e', borderColor: 'rgba(255,255,255,0.1)', textStyle: { color: '#e8eaf0' } },
         series: [{
           type: 'pie', radius: ['40%', '70%'],
           data: items.map(i => ({ name: i.model || i.alias, value: i.total_tokens || 0 })),
-          label: { show: true, formatter: '{b}\n{d}%' },
+          label: { show: true, formatter: '{b}\n{d}%', color: '#8b90a0', fontSize: 11 },
+          itemStyle: { borderColor: '#161822', borderWidth: 2 },
+          color: ['#6366f1', '#818cf8', '#a5b4fc', '#34d399', '#fbbf24', '#f87171', '#60a5fa', '#c084fc'],
         }],
       });
       window.addEventListener('resize', () => chart.resize());

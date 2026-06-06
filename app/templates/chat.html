@@ -4,58 +4,108 @@
 {% block header_title %}AI 对话{% endblock %}
 
 {% block body %}
-<body class="bg-gray-50 flex h-screen overflow-hidden">
+<body class="flex h-screen overflow-hidden" style="background: var(--bg-page); color: var(--text-primary);">
   <!-- Sidebar: conversations + navigation -->
-  <aside class="w-64 bg-gray-900 text-gray-100 flex flex-col shrink-0">
-    <div class="h-14 flex items-center justify-between px-4 border-b border-gray-700">
-      <span class="text-sm font-medium">会话列表</span>
-      <button onclick="createConversation()" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">+ 新建</button>
+  <aside class="w-64 flex flex-col shrink-0" style="background: var(--bg-sidebar); border-right: 1px solid var(--border);">
+    <!-- Brand + New button -->
+    <div class="h-14 flex items-center justify-between px-4" style="border-bottom: 1px solid var(--border);">
+      <div class="flex items-center gap-2">
+        <div class="w-6 h-6 rounded flex items-center justify-center" style="background: linear-gradient(135deg, var(--accent), var(--accent-dark));">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>
+        <span class="text-sm font-semibold" style="color: var(--text-primary);">会话</span>
+      </div>
+      <button onclick="createConversation()" class="flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-md transition-all" style="background: var(--accent-subtle); color: var(--accent-light); border: 1px solid rgba(99,102,241,0.15);" onmouseover="this.style.background='rgba(99,102,241,0.15)'" onmouseout="this.style.background='var(--accent-subtle)'">
+        <i data-lucide="plus" style="width:12px;height:12px;"></i> 新建
+      </button>
     </div>
-    <div id="conv-list" class="flex-1 overflow-y-auto py-1 text-sm">
-      <div class="px-4 py-6 text-center text-gray-500 text-xs">加载中...</div>
+
+    <!-- Conversation list -->
+    <div id="conv-list" class="flex-1 overflow-y-auto py-1 text-sm" style="scrollbar-width: thin;">
+      <div class="px-4 py-6 text-center text-xs" style="color: var(--text-muted);">加载中...</div>
     </div>
+
     <!-- Navigation links -->
-    {% if user and user.role and user.role.name == 'admin' %}
-    <div class="border-t border-gray-700 px-3 py-2 space-y-1 text-xs">
-      <a href="/pages/dashboard" class="block px-2 py-1.5 rounded hover:bg-gray-800 text-gray-400 hover:text-gray-200">📊 全局看板</a>
-      <a href="/pages/gateway" class="block px-2 py-1.5 rounded hover:bg-gray-800 text-gray-400 hover:text-gray-200">🔗 大模型管理</a>
-      <a href="/pages/users" class="block px-2 py-1.5 rounded hover:bg-gray-800 text-gray-400 hover:text-gray-200">👥 人员管理</a>
-      <a href="/pages/audit" class="block px-2 py-1.5 rounded hover:bg-gray-800 text-gray-400 hover:text-gray-200">📋 调用日志</a>
-      <a href="/pages/usage" class="block px-2 py-1.5 rounded hover:bg-gray-800 text-gray-400 hover:text-gray-200">📉 使用统计</a>
-      <a href="/pages/api-keys" class="block px-2 py-1.5 rounded hover:bg-gray-800 text-gray-400 hover:text-gray-200">🔑 API Key</a>
-      <a href="/pages/backup" class="block px-2 py-1.5 rounded hover:bg-gray-800 text-gray-400 hover:text-gray-200">💾 数据库备份</a>
+    <div class="px-2 py-2 space-y-0.5" style="border-top: 1px solid var(--border);">
+      {% if user and user.role and user.role.name == 'admin' %}
+      <a href="/pages/dashboard" class="sidebar-link text-xs">
+        <i data-lucide="bar-chart-3" class="sidebar-icon" style="width:15px;height:15px;"></i> 全局看板
+      </a>
+      <a href="/pages/gateway" class="sidebar-link text-xs">
+        <i data-lucide="plug" class="sidebar-icon" style="width:15px;height:15px;"></i> 大模型管理
+      </a>
+      <a href="/pages/users" class="sidebar-link text-xs">
+        <i data-lucide="users" class="sidebar-icon" style="width:15px;height:15px;"></i> 人员管理
+      </a>
+      <a href="/pages/audit" class="sidebar-link text-xs">
+        <i data-lucide="file-text" class="sidebar-icon" style="width:15px;height:15px;"></i> 调用日志
+      </a>
+      <a href="/pages/usage" class="sidebar-link text-xs">
+        <i data-lucide="pie-chart" class="sidebar-icon" style="width:15px;height:15px;"></i> 使用统计
+      </a>
+      <a href="/pages/api-keys" class="sidebar-link text-xs">
+        <i data-lucide="key" class="sidebar-icon" style="width:15px;height:15px;"></i> API Key
+      </a>
+      <a href="/pages/backup" class="sidebar-link text-xs">
+        <i data-lucide="database" class="sidebar-icon" style="width:15px;height:15px;"></i> 数据库备份
+      </a>
+      {% else %}
+      <a href="/pages/my-usage" class="sidebar-link text-xs">
+        <i data-lucide="trending-up" class="sidebar-icon" style="width:15px;height:15px;"></i> 我的用量
+      </a>
+      {% endif %}
     </div>
-    {% endif %}
-    <div class="border-t border-gray-700 px-4 py-2 flex items-center justify-between text-xs text-gray-400">
-      <span>{{ user.username }}</span>
-      <a href="/pages/logout" class="hover:text-gray-200">退出</a>
+
+    <!-- User footer -->
+    <div class="px-3 py-2.5 flex items-center justify-between" style="border-top: 1px solid var(--border);">
+      <div class="flex items-center gap-2">
+        <div class="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold" style="background: var(--accent-subtle); color: var(--accent-light);">
+          {{ user.username[0] | upper }}
+        </div>
+        <span class="text-xs" style="color: var(--text-secondary);">{{ user.username }}</span>
+      </div>
+      <a href="/pages/logout" class="transition-colors" style="color: var(--text-muted);" onmouseover="this.style.color='var(--text-primary)'" onmouseout="this.style.color='var(--text-muted)'">
+        <i data-lucide="log-out" style="width:14px;height:14px;"></i>
+      </a>
     </div>
   </aside>
 
   <!-- Chat area -->
   <div class="flex-1 flex flex-col min-w-0">
     <!-- Model selector -->
-    <div class="h-12 border-b border-gray-200 bg-white flex items-center px-4 gap-2 shrink-0">
-      <label class="text-xs text-gray-500">模型:</label>
-      <select id="model-select" class="border border-gray-300 rounded px-2 py-1 text-sm flex-1 max-w-xs">
+    <div class="h-12 flex items-center px-4 gap-2 shrink-0" style="background: var(--bg-surface); border-bottom: 1px solid var(--border);">
+      <i data-lucide="cpu" style="width:14px;height:14px;color:var(--text-muted);"></i>
+      <label class="text-xs font-medium" style="color: var(--text-muted);">模型</label>
+      <select id="model-select" class="flex-1 max-w-xs text-sm" style="background: var(--bg-surface-raised); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; color: var(--text-primary);">
         <option value="">加载中...</option>
       </select>
     </div>
 
     <!-- Messages -->
     <div id="messages" class="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-      <div class="text-center text-gray-400 text-sm py-12">选择或创建一个会话开始对话</div>
+      <div class="text-center text-sm py-16" style="color: var(--text-muted);">
+        <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4" style="background: var(--accent-subtle);">
+          <i data-lucide="message-square" style="width:28px;height:28px;color:var(--accent-light);"></i>
+        </div>
+        <p>选择或创建一个会话开始对话</p>
+      </div>
     </div>
 
     <!-- Input -->
-    <div class="border-t border-gray-200 bg-white px-4 py-3 shrink-0">
+    <div class="px-4 py-3 shrink-0" style="background: var(--bg-surface); border-top: 1px solid var(--border);">
       <div class="flex gap-2 max-w-3xl mx-auto">
         <textarea id="chat-input" rows="1" placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
-                  class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  style="max-height: 120px;"></textarea>
+                  class="flex-1 text-sm resize-none"
+                  style="background: var(--bg-surface-raised); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; color: var(--text-primary); max-height: 120px; outline: none; font-family: var(--font-sans);"
+                  onfocus="this.style.borderColor='var(--accent)'; this.style.boxShadow='0 0 0 3px var(--accent-glow)'"
+                  onblur="this.style.borderColor='var(--border)'; this.style.boxShadow='none'"></textarea>
         <button id="btn-send" onclick="sendMessage()"
-                class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 shrink-0">
-          发送
+                class="btn-primary flex items-center gap-1.5 shrink-0"
+                style="border-radius: 10px; padding: 10px 18px;">
+          <i data-lucide="send" style="width:14px;height:14px;"></i>
+          <span>发送</span>
         </button>
       </div>
     </div>
