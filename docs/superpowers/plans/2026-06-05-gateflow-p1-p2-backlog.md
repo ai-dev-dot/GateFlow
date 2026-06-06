@@ -555,7 +555,7 @@ async with engine.begin() as conn:
 | P1-9 | TODO | — | |
 | P2-1 | TODO | — | |
 | P2-2 | DONE | 03c2fbb | gateway.py → model_configs.py，路径前缀不变 |
-| P2-3 | TODO | — | |
+| P2-3 | DONE | 032227b | 抽 _build_summary_query 静态方法，+7 tests 覆盖 4 维度 |
 | P2-4 | TODO | — | |
 | P2-5 | TODO | — | |
 | P2-6 | TODO | — | |
