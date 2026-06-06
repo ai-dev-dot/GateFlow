@@ -4,6 +4,19 @@
 让 service 层和 router 层测试可以跑起来（不需要外部 PostgreSQL）。
 """
 
+import os
+
+# Set defaults for required secrets BEFORE importing any app module that
+# loads Settings. Real values in the dev's environment / .env take
+# precedence — setdefault is no-op when the var is already set.
+# CI (and any dev who hasn't set them) gets a real, freshly-generated
+# Fernet key + a long random HMAC secret so startup checks don't fail
+# and Fernet round-trips actually work in tests that touch crypto.
+from cryptography.fernet import Fernet
+
+os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode())
+os.environ.setdefault("HMAC_SECRET", "test-hmac-secret-not-for-production-use-32+chars")
+
 from collections.abc import AsyncGenerator
 
 import pytest
