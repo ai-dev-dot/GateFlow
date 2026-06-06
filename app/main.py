@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -106,10 +106,20 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
 @app.get("/")
-async def root():
-    """Redirect root to the chat page."""
+async def root(request: Request):
+    """Root: logged in → /pages/chat, not logged in → /pages/login."""
     from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/pages/chat")
+    from jose import JWTError, jwt
+
+    token = request.cookies.get("gf_session")
+    if token:
+        try:
+            settings = get_settings()
+            jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=["HS256"])
+            return RedirectResponse(url="/pages/chat")
+        except JWTError:
+            pass
+    return RedirectResponse(url="/pages/login")
 
 
 @app.get("/health")
