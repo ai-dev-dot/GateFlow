@@ -5,54 +5,105 @@
 
 {% block content %}
 <div class="space-y-4">
-  <!-- Filters -->
-  <div class="bg-white rounded-lg border border-gray-200 p-4 flex flex-wrap items-end gap-3">
-    <div>
-      <label class="block text-xs text-gray-500 mb-1">维度</label>
-      <select id="f-dimension" onchange="reload()" class="border border-gray-300 rounded px-2 py-1.5 text-sm">
-        <option value="model">按模型</option>
-        <option value="department">按部门</option>
-        <option value="user">按用户</option>
-        <option value="agent_type">按客户端</option>
-      </select>
+  <!-- Tabs + Date filters -->
+  <div class="gf-card">
+    <div class="gf-card-body flex flex-wrap items-center gap-4">
+      <!-- Dimension tabs -->
+      <div class="flex rounded-lg overflow-hidden" style="border: 1px solid var(--border);">
+        <button onclick="switchDim('model')" id="tab-model" class="dim-tab active px-4 py-1.5 text-xs font-medium transition-colors">按模型</button>
+        <button onclick="switchDim('department')" id="tab-department" class="dim-tab px-4 py-1.5 text-xs font-medium transition-colors">按部门</button>
+        <button onclick="switchDim('user')" id="tab-user" class="dim-tab px-4 py-1.5 text-xs font-medium transition-colors">按用户</button>
+        <button onclick="switchDim('agent_type')" id="tab-agent_type" class="dim-tab px-4 py-1.5 text-xs font-medium transition-colors">按客户端</button>
+      </div>
+      <!-- Date range -->
+      <div class="flex items-center gap-2 ml-auto">
+        <label class="text-xs" style="color: var(--text-muted);">日期</label>
+        <input type="date" id="f-from" onchange="reload()" class="text-sm" style="padding: 5px 10px;">
+        <span class="text-xs" style="color: var(--text-muted);">—</span>
+        <input type="date" id="f-to" onchange="reload()" class="text-sm" style="padding: 5px 10px;">
+        <button onclick="clearDates()" class="text-xs transition-colors" style="color: var(--text-muted); padding: 5px 8px;" onmouseover="this.style.color='var(--text-primary)'" onmouseout="this.style.color='var(--text-muted)'">重置</button>
+      </div>
     </div>
-    <div>
-      <label class="block text-xs text-gray-500 mb-1">开始日期</label>
-      <input type="date" id="f-from" onchange="reload()" class="border border-gray-300 rounded px-2 py-1.5 text-sm">
-    </div>
-    <div>
-      <label class="block text-xs text-gray-500 mb-1">结束日期</label>
-      <input type="date" id="f-to" onchange="reload()" class="border border-gray-300 rounded px-2 py-1.5 text-sm">
-    </div>
-    <button onclick="reload()" class="bg-blue-600 text-white px-3 py-1.5 rounded text-sm hover:bg-blue-700">刷新</button>
+  </div>
+
+  <!-- Date range hint -->
+  <div id="range-hint" class="flex items-center gap-2 px-1">
+    <i data-lucide="calendar" style="width:13px;height:13px;color:var(--text-muted);"></i>
+    <span id="range-text" class="text-xs" style="color: var(--text-muted);"></span>
   </div>
 
   <!-- Charts -->
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div class="bg-white rounded-lg border border-gray-200 p-4">
-      <h3 class="text-sm font-semibold text-gray-700 mb-3">Token 用量（输入/输出）</h3>
-      <div id="chart-bar" style="height: 350px;"></div>
+    <div class="gf-card">
+      <div class="gf-card-header">Token 用量（输入 / 输出）</div>
+      <div class="gf-card-body">
+        <div id="chart-bar" style="height: 350px;"></div>
+      </div>
     </div>
-    <div class="bg-white rounded-lg border border-gray-200 p-4">
-      <h3 class="text-sm font-semibold text-gray-700 mb-3">请求次数占比</h3>
-      <div id="chart-pie" style="height: 350px;"></div>
+    <div class="gf-card">
+      <div class="gf-card-header">请求次数占比</div>
+      <div class="gf-card-body">
+        <div id="chart-pie" style="height: 350px;"></div>
+      </div>
     </div>
   </div>
 </div>
+
+<style>
+  .dim-tab {
+    color: var(--text-muted);
+    background: transparent;
+  }
+  .dim-tab:hover {
+    color: var(--text-secondary);
+    background: rgba(255,255,255,0.03);
+  }
+  .dim-tab.active {
+    color: #fff;
+    background: var(--accent);
+  }
+</style>
 {% endblock %}
 
 {% block scripts %}
 <script>
 let barChart, pieChart;
+let currentDim = 'model';
+
+function switchDim(dim) {
+  currentDim = dim;
+  document.querySelectorAll('.dim-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + dim).classList.add('active');
+  reload();
+}
+
+function clearDates() {
+  document.getElementById('f-from').value = '';
+  document.getElementById('f-to').value = '';
+  reload();
+}
 
 function reload() {
-  const dim = document.getElementById('f-dimension').value;
   const from = document.getElementById('f-from').value;
   const to = document.getElementById('f-to').value;
-  const params = new URLSearchParams({ dimension: dim });
+  const params = new URLSearchParams({ dimension: currentDim });
   if (from) params.set('from', from);
   if (to) params.set('to', to);
   loadCharts(params.toString());
+  updateRangeHint(from, to);
+}
+
+function updateRangeHint(from, to) {
+  const el = document.getElementById('range-text');
+  if (from && to) {
+    el.textContent = `${from} 至 ${to}`;
+  } else if (from) {
+    el.textContent = `${from} 至今`;
+  } else if (to) {
+    el.textContent = `截至 ${to}`;
+  } else {
+    el.textContent = '全部数据';
+  }
 }
 
 async function loadCharts(query) {
@@ -70,6 +121,19 @@ async function loadCharts(query) {
     const inputTokens = items.map(i => i.input_tokens || 0);
     const outputTokens = items.map(i => i.output_tokens || 0);
     const requestCounts = items.map(i => i.request_count || 0);
+
+    // Update range hint with actual data range from API
+    if (data.date_from || data.date_to) {
+      const el = document.getElementById('range-text');
+      const from = document.getElementById('f-from').value;
+      const to = document.getElementById('f-to').value;
+      // Only update if user hasn't set explicit filters
+      if (!from && !to) {
+        const dFrom = data.date_from ? data.date_from.slice(0, 10) : '—';
+        const dTo = data.date_to ? data.date_to.slice(0, 10) : '—';
+        el.textContent = `${dFrom} 至 ${dTo}（全部数据）`;
+      }
+    }
 
     // Stacked bar chart
     if (!barChart) {

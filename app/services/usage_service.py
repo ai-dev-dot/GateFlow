@@ -124,6 +124,25 @@ class UsageService:
             group_by.append(group_by_extra)
         return select(*columns).where(*filters).group_by(*group_by)
 
+    async def get_date_range(
+        self,
+        user_id: UUID | None = None,
+    ) -> dict:
+        """返回 AuditLog 中最早和最新记录的时间范围"""
+        filters = [AuditLog.status_code.isnot(None)]
+        if user_id:
+            filters.append(AuditLog.user_id == user_id)
+        query = select(
+            func.min(AuditLog.timestamp).label("date_from"),
+            func.max(AuditLog.timestamp).label("date_to"),
+        ).where(*filters)
+        result = await self.db.execute(query)
+        row = result.one()
+        return {
+            "date_from": row.date_from.isoformat() if row.date_from else None,
+            "date_to": row.date_to.isoformat() if row.date_to else None,
+        }
+
     async def get_trend(
         self,
         user_id: UUID | None = None,

@@ -383,6 +383,31 @@ select {
   padding-right: 30px;
 }
 
+/* Date input dark theme */
+input[type="date"] {
+  color-scheme: dark;
+  position: relative;
+}
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.6);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+input[type="date"]::-webkit-datetime-edit {
+  color: var(--text-primary);
+}
+input[type="date"]::-webkit-datetime-edit-fields-wrapper {
+  color: var(--text-primary);
+}
+/* Firefox date picker text */
+input[type="date"]::-moz-datetime-edit {
+  color: var(--text-primary);
+}
+
 /* ── Alerts ─────────────────────────────────────── */
 .gf-alert {
   padding: 12px 16px;

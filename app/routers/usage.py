@@ -29,7 +29,8 @@ async def get_usage_summary(
         start_date=start_date,
         end_date=end_date,
     )
-    return {"dimension": dimension, "items": summary}
+    date_range = await service.get_date_range()
+    return {"dimension": dimension, "items": summary, **date_range}
 
 
 @router.get("/trend")
