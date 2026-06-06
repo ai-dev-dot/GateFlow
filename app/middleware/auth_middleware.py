@@ -2,18 +2,21 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import get_settings
 from app.database import get_db
 from app.models import APIKey, User
 from app.utils.hashing import hash_api_key
 from app.utils.security import decode_access_token
 
 security = HTTPBearer(auto_error=False)
+COOKIE_NAME = "gf_session"
 
 
 async def _resolve_credentials(
@@ -92,10 +95,31 @@ async def _resolve_credentials(
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Get current user supporting both JWT Token and API Key authentication."""
+    """Get current user supporting JWT Token, API Key, and session cookie authentication."""
+    # If no Authorization header, try session cookie
+    if not credentials:
+        token = request.cookies.get(COOKIE_NAME)
+        if token:
+            try:
+                settings = get_settings()
+                payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=["HS256"])
+                user_id_str = payload.get("sub")
+                if user_id_str:
+                    result = await db.execute(
+                        select(User)
+                        .where(User.id == UUID(user_id_str))
+                        .options(selectinload(User.role), selectinload(User.department))
+                    )
+                    user = result.scalar_one_or_none()
+                    if user and user.is_active:
+                        return user
+            except (JWTError, ValueError):
+                pass
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="未提供认证信息")
     user, _, _ = await _resolve_credentials(credentials, db)
     return user
 
@@ -117,9 +141,30 @@ class AuthContext:
 
 
 async def get_auth_context(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db),
 ) -> AuthContext:
     """Like get_current_user but also returns api_key_id and agent_type for audit tracking."""
+    # If no Authorization header, try session cookie
+    if not credentials:
+        token = request.cookies.get(COOKIE_NAME)
+        if token:
+            try:
+                settings = get_settings()
+                payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=["HS256"])
+                user_id_str = payload.get("sub")
+                if user_id_str:
+                    result = await db.execute(
+                        select(User)
+                        .where(User.id == UUID(user_id_str))
+                        .options(selectinload(User.role), selectinload(User.department))
+                    )
+                    user = result.scalar_one_or_none()
+                    if user and user.is_active:
+                        return AuthContext(user=user)
+            except (JWTError, ValueError):
+                pass
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="未提供认证信息")
     user, api_key_id, agent_type = await _resolve_credentials(credentials, db)
     return AuthContext(user=user, api_key_id=api_key_id, agent_type=agent_type)

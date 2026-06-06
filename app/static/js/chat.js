@@ -1,4 +1,5 @@
 /* GateFlow — Chat streaming logic */
+console.log('chat.js loaded');
 
 let currentConvId = null;
 let isStreaming = false;
@@ -12,8 +13,8 @@ async function loadModels() {
     select.innerHTML = '';
     models.filter(m => m.is_active !== false).forEach(m => {
       const opt = document.createElement('option');
-      opt.value = m.alias;
-      opt.textContent = m.alias;
+      opt.value = m.model_alias;
+      opt.textContent = m.model_alias;
       select.appendChild(opt);
     });
   } catch {}
@@ -63,15 +64,16 @@ async function loadConversations() {
 
 async function createConversation() {
   try {
+    const model = document.getElementById('model-select').value || 'deepseek-v4-flash';
     const res = await fetch('/api/chat/conversations', {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: '新会话' }),
+      body: JSON.stringify({ model: model }),
     });
     const conv = await res.json();
     await loadConversations();
     selectConversation(conv.id);
-  } catch {}
+  } catch(e) { console.error('createConversation error:', e); }
 }
 
 async function deleteConversation(id) {
@@ -234,6 +236,9 @@ document.getElementById('chat-input').addEventListener('input', (e) => {
 });
 
 // --- Init ---
-loadModels();
-loadConversations();
-</script>
+try {
+  loadModels();
+  loadConversations();
+} catch(e) {
+  console.error('Chat init error:', e);
+}

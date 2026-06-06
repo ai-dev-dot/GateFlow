@@ -10,6 +10,7 @@ from fastapi import Cookie, Depends, HTTPException
 from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.database import get_db
@@ -46,7 +47,9 @@ async def get_current_user_from_cookie(
     except (ValueError, AttributeError):
         raise HTTPException(status_code=401, detail="无效的会话")
 
-    result = await db.execute(select(User).where(User.id == user_id))
+    result = await db.execute(
+        select(User).options(selectinload(User.role)).where(User.id == user_id)
+    )
     user = result.scalar_one_or_none()
 
     if not user or not user.is_active:
