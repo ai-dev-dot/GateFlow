@@ -554,7 +554,7 @@ async with engine.begin() as conn:
 | P1-8 | TODO | — | |
 | P1-9 | TODO | — | |
 | P2-1 | TODO | — | |
-| P2-2 | TODO | — | |
+| P2-2 | DONE | 03c2fbb | gateway.py → model_configs.py，路径前缀不变 |
 | P2-3 | TODO | — | |
 | P2-4 | TODO | — | |
 | P2-5 | TODO | — | |
