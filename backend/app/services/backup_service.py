@@ -19,6 +19,7 @@ import datetime
 import glob
 import logging
 import os
+import subprocess
 from urllib.parse import urlparse
 
 from sqlalchemy import select
@@ -184,14 +185,20 @@ async def run_backup(db: AsyncSession) -> dict:
     env = {**os.environ, "PGPASSWORD": pg["password"]} if pg["password"] else None
 
     start = datetime.datetime.now()
+    # Use subprocess.run in a worker thread (asyncio.to_thread) rather than
+    # asyncio.create_subprocess_exec. The asyncio subprocess transport is
+    # NotImplementedError on Windows' default ProactorEventLoop, so a sync
+    # subprocess.run + to_thread is the cross-platform-safe option. The
+    # lambda unpacks argv so subprocess.run sees positional program+args.
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *argv,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
+        completed = await asyncio.to_thread(
+            lambda: subprocess.run(
+                argv,
+                capture_output=True,
+                env=env,
+                check=False,
+            )
         )
-        _stdout, stderr = await proc.communicate()
     except FileNotFoundError as e:
         # pg_dump binary not installed
         raise BackupFailedError(
@@ -201,16 +208,16 @@ async def run_backup(db: AsyncSession) -> dict:
         ) from e
 
     duration_ms = int((datetime.datetime.now() - start).total_seconds() * 1000)
-    stderr_text = (stderr or b"").decode("utf-8", errors="replace")
+    stderr_text = (completed.stderr or b"").decode("utf-8", errors="replace")
 
-    if proc.returncode != 0:
+    if completed.returncode != 0:
         # Best-effort cleanup of any partial file pg_dump may have left.
         if os.path.exists(out_path):
             with contextlib.suppress(OSError):
                 os.unlink(out_path)
         raise BackupFailedError(
-            f"pg_dump failed (rc={proc.returncode})",
-            returncode=proc.returncode,
+            f"pg_dump failed (rc={completed.returncode})",
+            returncode=completed.returncode,
             stderr=stderr_text,
         )
 

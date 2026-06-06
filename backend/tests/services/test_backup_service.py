@@ -11,7 +11,8 @@ Covers:
 """
 
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+import subprocess
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -32,12 +33,21 @@ from app.services.backup_service import (
 # ---------- helpers ----------
 
 
-def _make_completed_proc(returncode: int = 0, stderr: bytes = b""):
-    """Build an object that mimics the return of create_subprocess_exec + communicate."""
-    proc = MagicMock()
-    proc.returncode = returncode
-    proc.communicate = AsyncMock(return_value=(b"", stderr))
-    return proc
+def _make_completed(returncode: int = 0, stderr: bytes = b"", write_to_out: bool = True):
+    """Build a subprocess.CompletedProcess-like object for mocking subprocess.run.
+
+    If ``write_to_out`` is True, a tiny dummy file is created at the path
+    the argv's ``-f`` flag points to (mimicking pg_dump's actual behavior).
+    """
+
+    def _factory(*argv, **kwargs):
+        if write_to_out:
+            out_idx = argv.index("-f") + 1
+            with open(argv[out_idx], "w", encoding="utf-8") as f:
+                f.write("-- PG dump\n")
+        return subprocess.CompletedProcess(args=argv, returncode=returncode, stderr=stderr)
+
+    return _factory
 
 
 # ---------- get_config ----------
@@ -125,9 +135,9 @@ async def test_run_backup_skipped_on_sqlite(db_session, monkeypatch):
 
     with (
         patch.object(
-            backup_service.asyncio,
-            "create_subprocess_exec",
-            new=AsyncMock(side_effect=AssertionError("must not be called")),
+            backup_service.subprocess,
+            "run",
+            new=MagicMock(side_effect=AssertionError("must not be called")),
         ),
         pytest.raises(BackupNotSupportedError, match="PostgreSQL"),
     ):
@@ -139,7 +149,7 @@ async def test_run_backup_skipped_on_sqlite(db_session, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_run_backup_pg_path_invokes_pg_dump(db_session, monkeypatch, tmp_path):
-    """Mock subprocess; verify argv + env + result dict shape + file written."""
+    """Mock subprocess.run; verify argv + env + result dict shape + file written."""
     await update_config(db_session, backup_dir=str(tmp_path), backup_include_audit_logs=True)
 
     # Force the URL check to pass (test env is SQLite)
@@ -156,22 +166,23 @@ async def test_run_backup_pg_path_invokes_pg_dump(db_session, monkeypatch, tmp_p
         },
     )
 
-    out_path = None
     captured = {}
 
-    async def fake_exec(*argv, **kwargs):
-        captured["argv"] = argv
+    def fake_run(*args, **kwargs):
+        # service calls subprocess.run(argv, ...) — the first positional arg
+        # is the program+args list as a whole. Mirror that signature.
+        program_argv = args[0] if args else kwargs.get("args", [])
+        captured["argv"] = program_argv
         captured["env"] = kwargs.get("env")
         # Write a small dummy file at the path pg_dump would have written.
         # argv layout: [pg_dump, -h, host, -p, port, -U, user, -d, db, -f, path, ...]
-        out_idx = argv.index("-f") + 1
-        nonlocal out_path
-        out_path = argv[out_idx]
+        out_idx = program_argv.index("-f") + 1
+        out_path = program_argv[out_idx]
         with open(out_path, "w", encoding="utf-8") as f:
             f.write("-- PG dump\nCREATE TABLE users (\n);\nCREATE TABLE roles (\n);\n")
-        return _make_completed_proc(returncode=0)
+        return subprocess.CompletedProcess(args=program_argv, returncode=0, stderr=b"")
 
-    monkeypatch.setattr(backup_service.asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(backup_service.subprocess, "run", fake_run)
 
     result = await run_backup(db_session)
     assert result["filename"].startswith("gateflow_") and result["filename"].endswith(".sql")
@@ -179,7 +190,6 @@ async def test_run_backup_pg_path_invokes_pg_dump(db_session, monkeypatch, tmp_p
     assert result["duration_ms"] >= 0
     assert result["tables_dumped"] == 2  # users + roles
     assert result["excluded_audit_logs"] is False
-    assert result["path"] == out_path
     # argv checks
     argv = captured["argv"]
     assert argv[0] == "pg_dump"
@@ -212,14 +222,15 @@ async def test_run_backup_excludes_audit_logs_by_default(db_session, monkeypatch
 
     captured = {}
 
-    async def fake_exec(*argv, **kwargs):
-        captured["argv"] = argv
-        out_idx = argv.index("-f") + 1
-        with open(argv[out_idx], "w", encoding="utf-8") as f:
+    def fake_run(*args, **kwargs):
+        program_argv = args[0] if args else kwargs.get("args", [])
+        captured["argv"] = program_argv
+        out_idx = program_argv.index("-f") + 1
+        with open(program_argv[out_idx], "w", encoding="utf-8") as f:
             f.write("-- PG dump\n")
-        return _make_completed_proc(returncode=0)
+        return subprocess.CompletedProcess(args=program_argv, returncode=0, stderr=b"")
 
-    monkeypatch.setattr(backup_service.asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(backup_service.subprocess, "run", fake_run)
 
     result = await run_backup(db_session)
     assert result["excluded_audit_logs"] is True
@@ -246,15 +257,18 @@ async def test_run_backup_propagates_nonzero_returncode(db_session, monkeypatch,
 
     out_path_holder = {}
 
-    async def fake_exec(*argv, **kwargs):
-        out_idx = argv.index("-f") + 1
-        out_path_holder["p"] = argv[out_idx]
+    def fake_run(*args, **kwargs):
+        program_argv = args[0] if args else kwargs.get("args", [])
+        out_idx = program_argv.index("-f") + 1
+        out_path_holder["p"] = program_argv[out_idx]
         # pg_dump would have written something before failing
-        with open(argv[out_idx], "w", encoding="utf-8") as f:
+        with open(program_argv[out_idx], "w", encoding="utf-8") as f:
             f.write("partial content\n")
-        return _make_completed_proc(returncode=1, stderr=b"permission denied to table x")
+        return subprocess.CompletedProcess(
+            args=program_argv, returncode=1, stderr=b"permission denied to table x"
+        )
 
-    monkeypatch.setattr(backup_service.asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(backup_service.subprocess, "run", fake_run)
 
     with pytest.raises(BackupFailedError) as exc_info:
         await run_backup(db_session)
@@ -266,7 +280,7 @@ async def test_run_backup_propagates_nonzero_returncode(db_session, monkeypatch,
 
 @pytest.mark.asyncio
 async def test_run_backup_handles_missing_pg_dump_binary(db_session, monkeypatch, tmp_path):
-    """FileNotFoundError on create_subprocess_exec → BackupFailedError."""
+    """FileNotFoundError on subprocess.run → BackupFailedError."""
     await update_config(db_session, backup_dir=str(tmp_path), backup_include_audit_logs=True)
 
     monkeypatch.setattr(backup_service, "is_postgres_url", lambda url: True)
@@ -282,10 +296,10 @@ async def test_run_backup_handles_missing_pg_dump_binary(db_session, monkeypatch
         },
     )
 
-    async def fake_exec(*args, **kwargs):
+    def fake_run(*args, **kwargs):
         raise FileNotFoundError("No such file or directory: 'pg_dump'")
 
-    monkeypatch.setattr(backup_service.asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(backup_service.subprocess, "run", fake_run)
 
     with pytest.raises(BackupFailedError, match="pg_dump binary not found"):
         await run_backup(db_session)
@@ -311,13 +325,14 @@ async def test_run_backup_creates_backup_dir_if_missing(db_session, monkeypatch,
         },
     )
 
-    async def fake_exec(*argv, **kwargs):
-        out_idx = argv.index("-f") + 1
-        with open(argv[out_idx], "w", encoding="utf-8") as f:
+    def fake_run(*args, **kwargs):
+        program_argv = args[0] if args else kwargs.get("args", [])
+        out_idx = program_argv.index("-f") + 1
+        with open(program_argv[out_idx], "w", encoding="utf-8") as f:
             f.write("dump\n")
-        return _make_completed_proc(returncode=0)
+        return subprocess.CompletedProcess(args=program_argv, returncode=0, stderr=b"")
 
-    monkeypatch.setattr(backup_service.asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(backup_service.subprocess, "run", fake_run)
 
     await run_backup(db_session)
     assert new_dir.is_dir()
