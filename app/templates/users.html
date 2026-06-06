@@ -232,7 +232,11 @@ document.getElementById('user-form').addEventListener('submit', async (e) => {
     const url = userEditingId ? `/api/users/${userEditingId}` : '/api/users';
     const method = userEditingId ? 'PUT' : 'POST';
     const res = await fetch(url, { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || '保存失败'); }
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      const msg = Array.isArray(d.detail) ? d.detail.map(e => e.msg || JSON.stringify(e)).join('; ') : (d.detail || '保存失败');
+      throw new Error(msg);
+    }
     document.getElementById('user-modal').close();
     showToast('已保存');
     loadAll();
@@ -276,7 +280,11 @@ document.getElementById('dept-form').addEventListener('submit', async (e) => {
     const url = deptEditingId ? `/api/users/departments/${deptEditingId}` : '/api/users/departments';
     const method = deptEditingId ? 'PUT' : 'POST';
     const res = await fetch(url, { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || '保存失败'); }
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      const msg = Array.isArray(d.detail) ? d.detail.map(e => e.msg || JSON.stringify(e)).join('; ') : (d.detail || '保存失败');
+      throw new Error(msg);
+    }
     document.getElementById('dept-modal').close();
     showToast('已保存'); loadDepartments();
   } catch (e) { showToast(e.message, 'error'); }
