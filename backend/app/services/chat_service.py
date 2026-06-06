@@ -46,16 +46,23 @@ class ChatService:
         )
         return list(result.scalars().all())
 
-    async def get_messages(self, conversation_id: UUID, user: User) -> list[Message]:
+    async def get_messages(
+        self, conversation_id: UUID, user: User
+    ) -> list[Message] | None:
+        """Return the messages of a conversation owned by ``user``.
+
+        Returns ``None`` if the conversation does not exist or is not
+        owned by the user (router maps this to 404). An empty list
+        means the conversation exists but has no messages yet.
+        """
         result = await self.db.execute(
-            select(Conversation).where(
+            select(Conversation.id).where(
                 Conversation.id == conversation_id,
                 Conversation.user_id == user.id,
             )
         )
-        conversation = result.scalar_one_or_none()
-        if not conversation:
-            return []
+        if result.scalar_one_or_none() is None:
+            return None
 
         result = await self.db.execute(
             select(Message)

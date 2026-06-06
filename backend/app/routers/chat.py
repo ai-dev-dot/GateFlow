@@ -53,14 +53,8 @@ async def get_messages(
     """获取对话消息列表"""
     service = ChatService(db)
     messages = await service.get_messages(conversation_id, current_user)
-    if not messages:
-        # Could be no messages or conversation not found/not owned
-        # We return empty list for empty conversations, 404 for invalid ownership
-        # Check if conversation exists for this user
-        conversations = await service.get_conversations(current_user)
-        conv_ids = {c.id for c in conversations}
-        if conversation_id not in conv_ids:
-            raise HTTPException(status_code=404, detail="对话不存在")
+    if messages is None:
+        raise HTTPException(status_code=404, detail="对话不存在")
     return messages
 
 

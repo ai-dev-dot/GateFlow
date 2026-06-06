@@ -53,6 +53,9 @@
 
 ### Removed
 - **P1-7 死代码**：`AuditService.MAX_LOG_CONTENT_LENGTH` (100KB) 字段 + `create_pending_log` 内部截断逻辑删除。所有 call site (gateway_service / chat_service / anthropic_forward) 调用前已经 `[:2000]` 截到 2KB，100KB 内部上限永远到不了
+
+### Changed (perf)
+- **P1-4 chat N+1**：`ChatService.get_messages` 改契约为 `list[Message] | None`——`None` 表示 404（对话不存在或非本人），`[]` 表示对话存在但为空。Router 不再为了消歧而全量拉 `get_conversations()`，404 路径从 O(N) 降到 1 次索引查询
 - 修复 auth 中间件懒加载与 chat/gateway 流式保存的 race condition（AI 消息"消失"问题）
 - 修复测试发现的 7 个 bug
 
