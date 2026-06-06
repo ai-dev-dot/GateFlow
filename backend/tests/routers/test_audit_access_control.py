@@ -9,8 +9,6 @@ Pins the contract from design spec §6.3:
   list and detail responses
 """
 
-from datetime import datetime
-
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -19,9 +17,7 @@ from sqlalchemy import select
 from app.main import app
 from app.models.audit import AuditLog
 from app.models.user import User
-from app.services.audit_service import AuditService
 from app.utils.crypto import encrypt_key
-from app.utils.hashing import api_key_prefix, hash_api_key
 
 
 @pytest_asyncio.fixture
@@ -33,7 +29,9 @@ async def client(db_session):
     async def _override_get_db():
         yield db_session
 
-    app.dependency_overrides[__import__("app.database", fromlist=["get_db"]).get_db] = _override_get_db
+    app.dependency_overrides[__import__("app.database", fromlist=["get_db"]).get_db] = (
+        _override_get_db
+    )
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
@@ -87,9 +85,9 @@ async def test_list_endpoint_never_returns_body(db_session, test_user, admin_use
     await db_session.commit()
     await db_session.refresh(log)
 
-    app.dependency_overrides[__import__("app.middleware.auth_middleware", fromlist=["get_current_user"]).get_current_user] = (
-        await _override_user(admin_user)
-    )
+    app.dependency_overrides[
+        __import__("app.middleware.auth_middleware", fromlist=["get_current_user"]).get_current_user
+    ] = await _override_user(admin_user)
 
     resp = await client.get("/api/audit/logs")
     assert resp.status_code == 200
@@ -111,9 +109,9 @@ async def test_detail_endpoint_default_no_body(db_session, test_user, admin_user
     await db_session.commit()
     await db_session.refresh(log)
 
-    app.dependency_overrides[__import__("app.middleware.auth_middleware", fromlist=["get_current_user"]).get_current_user] = (
-        await _override_user(admin_user)
-    )
+    app.dependency_overrides[
+        __import__("app.middleware.auth_middleware", fromlist=["get_current_user"]).get_current_user
+    ] = await _override_user(admin_user)
 
     resp = await client.get(f"/api/audit/logs/{log.id}")
     assert resp.status_code == 200
@@ -132,7 +130,9 @@ async def test_detail_include_body_non_admin_forbidden(db_session, test_user, cl
     await db_session.commit()
     await db_session.refresh(log)
 
-    app.dependency_overrides[__import__("app.middleware.auth_middleware", fromlist=["get_current_user"]).get_current_user] = (
+    app.dependency_overrides[
+        __import__("app.middleware.auth_middleware", fromlist=["get_current_user"]).get_current_user
+    ] = (
         await _override_user(test_user)  # non-admin (regular user)
     )
 
@@ -151,9 +151,9 @@ async def test_detail_include_body_admin_returns_plaintext(
     await db_session.commit()
     await db_session.refresh(log)
 
-    app.dependency_overrides[__import__("app.middleware.auth_middleware", fromlist=["get_current_user"]).get_current_user] = (
-        await _override_user(admin_user)
-    )
+    app.dependency_overrides[
+        __import__("app.middleware.auth_middleware", fromlist=["get_current_user"]).get_current_user
+    ] = await _override_user(admin_user)
 
     resp = await client.get(f"/api/audit/logs/{log.id}?include_body=true")
     assert resp.status_code == 200
@@ -188,9 +188,9 @@ async def test_detail_include_body_admin_no_body_stored(
     await db_session.refresh(log)
     assert log.request_body is None
 
-    app.dependency_overrides[__import__("app.middleware.auth_middleware", fromlist=["get_current_user"]).get_current_user] = (
-        await _override_user(admin_user)
-    )
+    app.dependency_overrides[
+        __import__("app.middleware.auth_middleware", fromlist=["get_current_user"]).get_current_user
+    ] = await _override_user(admin_user)
 
     resp = await client.get(f"/api/audit/logs/{log.id}?include_body=true")
     assert resp.status_code == 200

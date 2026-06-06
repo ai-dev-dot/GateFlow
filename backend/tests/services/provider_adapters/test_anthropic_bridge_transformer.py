@@ -66,9 +66,9 @@ def test_finish_reason_emits_block_stop_and_message_stop():
     t = AnthropicBridgeTransformer()
     t(_openai_chunk(role="assistant"))
     t(_openai_chunk(content="x"))
-    out = t(
-        _openai_chunk(content="", finish_reason="stop", usage={"completion_tokens": 7})
-    ).decode("utf-8")
+    out = t(_openai_chunk(content="", finish_reason="stop", usage={"completion_tokens": 7})).decode(
+        "utf-8"
+    )
 
     assert "event: content_block_stop" in out
     assert "event: message_stop" in out
@@ -162,6 +162,8 @@ def test_stateful_across_calls():
 
     big = AnthropicBridgeTransformer()
     big(_openai_chunk(role="assistant"))
-    out_big = big(_openai_chunk(content="H") + _openai_chunk(content="i") + _openai_chunk(content="!"))
+    out_big = big(
+        _openai_chunk(content="H") + _openai_chunk(content="i") + _openai_chunk(content="!")
+    )
 
     assert _text_payload(out_small) == _text_payload(out_big) == ["H", "i", "!"]

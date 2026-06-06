@@ -235,6 +235,7 @@ class StreamForwarder:
                 # SSE event that includes the request_id for support
                 # correlation.
                 from app.utils.errors import get_request_id_safe
+
                 rid = get_request_id_safe()
                 logger.error(f"[{rid}] Stream error: {e!r}", exc_info=True)
                 yield error_formatter(

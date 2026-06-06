@@ -72,6 +72,7 @@ async def test_anthropic_bridge_path_creates_audit_log(db_session, test_user):
     )
     db_session.add(mc)
     from app.utils.crypto import encrypt_key, key_preview
+
     pk = ProviderAPIKey(
         provider="openai",
         encrypted_key=encrypt_key("sk-fake-deepseek"),

@@ -46,6 +46,7 @@ async def _make_api_key(db, user, agent_type: AgentType | None = None) -> str:
 
 def _gen_key() -> tuple[str, str, str]:
     import secrets
+
     full = "gf_" + secrets.token_urlsafe(45)
     return full, full[:11], hash_api_key(full)
 

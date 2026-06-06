@@ -80,9 +80,7 @@ async def _count_messages(verify_session, conversation_id):
 
 
 @pytest.mark.asyncio
-async def test_send_message_rolls_back_user_message_when_llm_raises(
-    db_session, test_user
-):
+async def test_send_message_rolls_back_user_message_when_llm_raises(db_session, test_user):
     """If _call_llm raises (currently defensive — it doesn't, but might
     in future), the user_message must NOT be persisted without a
     matching AI response.
@@ -132,12 +130,16 @@ async def test_send_message_persists_both_on_success(db_session, test_user):
     assert result.role == "assistant"
     async with factory() as verify:
         msgs = (
-            await verify.execute(
-                select(Message)
-                .where(Message.conversation_id == conv.id)
-                .order_by(Message.created_at)
+            (
+                await verify.execute(
+                    select(Message)
+                    .where(Message.conversation_id == conv.id)
+                    .order_by(Message.created_at)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     assert [m.role for m in msgs] == ["user", "assistant"]
     assert [m.content for m in msgs] == ["hello", "hi back"]
 
@@ -171,18 +173,14 @@ async def _setup_stream_capture(db_session, test_user, conv_id, content):
 
 
 @pytest.mark.asyncio
-async def test_send_message_stream_deletes_orphan_on_stream_failure(
-    db_session, test_user
-):
+async def test_send_message_stream_deletes_orphan_on_stream_failure(db_session, test_user):
     """When the upstream stream fails (status_code != 200), the
     on_complete hook must delete the orphan user_message.
     """
     conv = await _make_conversation(db_session, test_user)
     factory = _session_factory(db_session)
 
-    on_complete, _ = await _setup_stream_capture(
-        db_session, test_user, conv.id, "hello stream"
-    )
+    on_complete, _ = await _setup_stream_capture(db_session, test_user, conv.id, "hello stream")
 
     # Sanity: the user_message is committed and visible to a fresh session
     async with factory() as verify:
@@ -206,21 +204,23 @@ async def test_send_message_stream_saves_ai_message_on_success(db_session, test_
     conv = await _make_conversation(db_session, test_user)
     factory = _session_factory(db_session)
 
-    on_complete, _ = await _setup_stream_capture(
-        db_session, test_user, conv.id, "stream hi"
-    )
+    on_complete, _ = await _setup_stream_capture(db_session, test_user, conv.id, "stream hi")
 
     await on_complete(db_session, full_content="streamed response", status_code=200)
     await db_session.commit()
 
     async with factory() as verify:
         msgs = (
-            await verify.execute(
-                select(Message)
-                .where(Message.conversation_id == conv.id)
-                .order_by(Message.created_at)
+            (
+                await verify.execute(
+                    select(Message)
+                    .where(Message.conversation_id == conv.id)
+                    .order_by(Message.created_at)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     assert [m.role for m in msgs] == ["user", "assistant"]
     assert [m.content for m in msgs] == ["stream hi", "streamed response"]
 
@@ -234,9 +234,7 @@ async def test_send_message_stream_deletes_orphan_on_empty_content(db_session, t
     conv = await _make_conversation(db_session, test_user)
     factory = _session_factory(db_session)
 
-    on_complete, _ = await _setup_stream_capture(
-        db_session, test_user, conv.id, "stream empty"
-    )
+    on_complete, _ = await _setup_stream_capture(db_session, test_user, conv.id, "stream empty")
     await on_complete(db_session, full_content="", status_code=200)
     await db_session.commit()
 
@@ -246,9 +244,7 @@ async def test_send_message_stream_deletes_orphan_on_empty_content(db_session, t
 
 
 @pytest.mark.asyncio
-async def test_send_message_stream_does_not_touch_other_conversations(
-    db_session, test_user
-):
+async def test_send_message_stream_does_not_touch_other_conversations(db_session, test_user):
     """The orphan cleanup must target the specific user_message by id,
     not by conversation_id (which could match messages from other convos
     in concurrent / interleaved scenarios).
@@ -258,14 +254,10 @@ async def test_send_message_stream_does_not_touch_other_conversations(
     factory = _session_factory(db_session)
 
     # Pre-seed conv_b with a user message that should survive the cleanup
-    db_session.add(
-        Message(conversation_id=conv_b.id, role="user", content="untouched", tokens=1)
-    )
+    db_session.add(Message(conversation_id=conv_b.id, role="user", content="untouched", tokens=1))
     await db_session.commit()
 
-    on_complete, _ = await _setup_stream_capture(
-        db_session, test_user, conv_a.id, "this one fails"
-    )
+    on_complete, _ = await _setup_stream_capture(db_session, test_user, conv_a.id, "this one fails")
     await on_complete(db_session, full_content="", status_code=504)
     await db_session.commit()
 
@@ -274,6 +266,6 @@ async def test_send_message_stream_does_not_touch_other_conversations(
         b_msgs = await _count_messages(verify, conv_b.id)
 
     assert a_msgs == [], "conv_a orphan should be cleaned up"
-    assert len(b_msgs) == 1 and b_msgs[0].content == "untouched", (
-        "conv_b message must not be touched"
-    )
+    assert (
+        len(b_msgs) == 1 and b_msgs[0].content == "untouched"
+    ), "conv_b message must not be touched"

@@ -157,9 +157,7 @@ class AuditService:
         # Build preview outside the create_pending_log path so we control
         # the exact format (which differs structurally from an LLM body).
         settings = get_settings()
-        meta_preview_raw = (
-            f"viewed log={target_short} user={user_short} path={target_log.path}"
-        )
+        meta_preview_raw = f"viewed log={target_short} user={user_short} path={target_log.path}"
         if len(meta_preview_raw) <= settings.AUDIT_LOG_PREVIEW_CHARS:
             meta_preview = meta_preview_raw
         else:

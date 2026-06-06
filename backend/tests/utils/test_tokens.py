@@ -4,7 +4,6 @@ Locks down the canonical token estimator used by chat / gateway / bridge
 paths so all three call sites share one behaviour.
 """
 
-
 from app.utils.tokens import CHARS_PER_TOKEN, estimate_tokens
 
 

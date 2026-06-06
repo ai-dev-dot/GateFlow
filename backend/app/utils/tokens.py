@@ -11,7 +11,6 @@ service, gateway service, Anthropic bridge router); the canonical
 implementation lives here so all paths agree.
 """
 
-
 # Conservative heuristic: 1 token ≈ 3 characters across mixed CJK / Latin
 # text. Real models use BPE; this is a deliberately rough estimator.
 CHARS_PER_TOKEN = 3

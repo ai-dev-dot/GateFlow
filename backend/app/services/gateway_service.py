@@ -164,6 +164,7 @@ class GatewayService:
         except Exception as e:
             # P0-4: never leak str(exception) to client.
             from app.utils.errors import get_request_id_safe
+
             rid = get_request_id_safe()
             logger.error(f"[{rid}] Request error: {e!r}", exc_info=True)
             status_code = 500

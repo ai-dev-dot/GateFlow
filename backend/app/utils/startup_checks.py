@@ -45,14 +45,14 @@ def verify_jwt_secret_not_placeholder() -> None:
         raise RuntimeError(
             "JWT_SECRET_KEY looks like a placeholder value. "
             "Generate a real one: "
-            "python -c \"import secrets;print(secrets.token_urlsafe(48))\""
+            'python -c "import secrets;print(secrets.token_urlsafe(48))"'
         )
 
     if len(key) < 32:
         raise RuntimeError(
             f"JWT_SECRET_KEY is too short ({len(key)} chars, min 32). "
             "Generate a real one: "
-            "python -c \"import secrets;print(secrets.token_urlsafe(48))\""
+            'python -c "import secrets;print(secrets.token_urlsafe(48))"'
         )
 
     logger.info("JWT_SECRET_KEY validation: OK (%d chars)", len(key))

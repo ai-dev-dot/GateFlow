@@ -318,7 +318,9 @@ async def test_forward_with_transform_chunk_emits_anth_format(db_session, test_u
     fake_client = FakeUpstreamStream(
         200,
         [
-            make_sse_chunk("ignored-text"),  # the openai body has 'content' so it's an actual text chunk
+            make_sse_chunk(
+                "ignored-text"
+            ),  # the openai body has 'content' so it's an actual text chunk
             b"data: [DONE]\n\n",
         ],
     )

@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import get_settings
 from app.database import async_session, engine
 from app.models import Base
 from app.models.agent_type import AgentType
@@ -17,7 +18,6 @@ from app.routers.model_configs import router as model_configs_router
 from app.routers.provider_keys import router as provider_keys_router
 from app.routers.usage import router as usage_router
 from app.routers.users import router as users_router
-from app.config import get_settings
 from app.services.auth_service import AuthService
 from app.utils.crypto import verify_fernet_works
 from app.utils.hashing import verify_hmac_works
@@ -68,9 +68,7 @@ app.add_middleware(RequestIDMiddleware)
 # CORS origins from .env (comma-separated). Default: localhost dev only.
 # Production: set ALLOWED_ORIGINS="https://gateflow.example.com,https://admin.gateflow.example.com"
 _allowed_origins = [
-    origin.strip()
-    for origin in get_settings().ALLOWED_ORIGINS.split(",")
-    if origin.strip()
+    origin.strip() for origin in get_settings().ALLOWED_ORIGINS.split(",") if origin.strip()
 ]
 app.add_middleware(
     CORSMiddleware,

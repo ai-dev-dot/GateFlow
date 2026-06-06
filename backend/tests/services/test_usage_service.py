@@ -57,8 +57,12 @@ def _audit(
 
 @pytest.mark.asyncio
 async def test_user_dimension_groups_by_user_and_username(db_session, test_user):
-    db_session.add(_audit(user_id=test_user.id, username="alice", request_tokens=5, response_tokens=7))
-    db_session.add(_audit(user_id=test_user.id, username="alice", request_tokens=3, response_tokens=2))
+    db_session.add(
+        _audit(user_id=test_user.id, username="alice", request_tokens=5, response_tokens=7)
+    )
+    db_session.add(
+        _audit(user_id=test_user.id, username="alice", request_tokens=3, response_tokens=2)
+    )
     await db_session.commit()
 
     rows = await UsageService(db_session).get_summary(dimension="user")
@@ -74,7 +78,9 @@ async def test_user_dimension_groups_by_user_and_username(db_session, test_user)
 
 @pytest.mark.asyncio
 async def test_non_user_dimensions_emit_null_username(db_session, test_user):
-    db_session.add(_audit(user_id=test_user.id, department="工程部", model="gpt-4", api_key_name="k1"))
+    db_session.add(
+        _audit(user_id=test_user.id, department="工程部", model="gpt-4", api_key_name="k1")
+    )
     db_session.add(
         _audit(user_id=test_user.id, department="销售部", model="claude-3", api_key_name="k2")
     )
@@ -117,9 +123,7 @@ async def test_user_id_filter_narrows_results(db_session, test_user):
     db_session.add(_audit(user_id=other_id, request_tokens=20))
     await db_session.commit()
 
-    rows = await UsageService(db_session).get_summary(
-        dimension="user", user_id=test_user.id
-    )
+    rows = await UsageService(db_session).get_summary(dimension="user", user_id=test_user.id)
     assert len(rows) == 1
     assert rows[0]["dimension"] == str(test_user.id)
     assert rows[0]["input_tokens"] == 10

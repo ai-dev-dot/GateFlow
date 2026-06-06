@@ -6,7 +6,7 @@ sanity check that .env has a working ENCRYPTION_KEY in the test env.
 """
 
 import pytest
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 
 from app.config import get_settings
 from app.utils.crypto import (
@@ -49,7 +49,8 @@ def test_preview_long_key_format():
 
 
 def test_decrypt_rejects_garbage():
-    with pytest.raises(Exception):  # InvalidToken or RuntimeError — both are failure
+    # InvalidToken or RuntimeError — both are failure modes
+    with pytest.raises((InvalidToken, RuntimeError)):
         decrypt_key("not-a-valid-fernet-token")
 
 

@@ -47,4 +47,3 @@ class ProviderAPIKey(Base, TimestampMixin):
         it, never log it.
         """
         return decrypt_key(self.encrypted_key)
-

@@ -135,12 +135,12 @@ async def get_log_detail(
         else:
             try:
                 decrypted = audit_service.decrypt_request_body(log.request_body)
-            except Exception:
+            except Exception as err:
                 # Decryption failure is itself an audit-worthy event
                 raise HTTPException(
                     status_code=500,
                     detail="无法解密日志 body（ENCRYPTION_KEY 可能已变更）",
-                )
+                ) from err
 
         # Record meta-audit AFTER successful decryption so the audit
         # log reflects what the admin actually saw (not denied requests).

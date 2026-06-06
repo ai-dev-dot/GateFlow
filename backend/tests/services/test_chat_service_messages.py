@@ -61,9 +61,7 @@ async def test_get_messages_returns_none_for_other_users_conversation(db_session
 
 
 @pytest.mark.asyncio
-async def test_get_messages_returns_empty_list_for_owned_empty_conversation(
-    db_session, test_user
-):
+async def test_get_messages_returns_empty_list_for_owned_empty_conversation(db_session, test_user):
     """A real conversation with no messages must return [] (not None)."""
     conv = await _make_conversation(db_session, test_user)
     result = await ChatService(db_session).get_messages(conv.id, test_user)
@@ -101,12 +99,8 @@ async def test_capped_history_returns_empty_for_no_messages(db_session, test_use
 @pytest.mark.asyncio
 async def test_capped_history_returns_all_when_under_cap(db_session, test_user):
     conv = await _make_conversation(db_session, test_user)
-    await _add_messages(
-        db_session, conv.id, ["hi", "hello", "how are you"], role="user"
-    )
-    await _add_messages(
-        db_session, conv.id, ["I'm good"], role="assistant"
-    )
+    await _add_messages(db_session, conv.id, ["hi", "hello", "how are you"], role="user")
+    await _add_messages(db_session, conv.id, ["I'm good"], role="assistant")
 
     history = await ChatService(db_session)._get_capped_history(conv.id)
     assert [m.content for m in history] == ["hi", "hello", "how are you", "I'm good"]
@@ -144,12 +138,8 @@ async def test_capped_history_always_includes_system_messages(db_session, test_u
         )
     )
     n_extra = MAX_HISTORY_MESSAGES + 10
-    await _add_messages(
-        db_session, conv.id, [f"u-{i}" for i in range(n_extra)], role="user"
-    )
-    await _add_messages(
-        db_session, conv.id, [f"a-{i}" for i in range(n_extra)], role="assistant"
-    )
+    await _add_messages(db_session, conv.id, [f"u-{i}" for i in range(n_extra)], role="user")
+    await _add_messages(db_session, conv.id, [f"a-{i}" for i in range(n_extra)], role="assistant")
     await db_session.commit()
 
     history = await ChatService(db_session)._get_capped_history(conv.id)

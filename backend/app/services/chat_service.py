@@ -52,9 +52,7 @@ class ChatService:
         )
         return list(result.scalars().all())
 
-    async def get_messages(
-        self, conversation_id: UUID, user: User
-    ) -> list[Message] | None:
+    async def get_messages(self, conversation_id: UUID, user: User) -> list[Message] | None:
         """Return the messages of a conversation owned by ``user``.
 
         Returns ``None`` if the conversation does not exist or is not
@@ -229,6 +227,7 @@ class ChatService:
             # goes into the AI message slot; full error is in server logs
             # (findable by request_id via the upstream RequestIDMiddleware).
             from app.utils.errors import get_request_id_safe
+
             rid = get_request_id_safe()
             logger.error(f"[{rid}] LLM call failed: {e!r}", exc_info=True)
             return f"(服务暂时不可用，请稍后重试。如需排查请提供 request_id: {rid})", 0

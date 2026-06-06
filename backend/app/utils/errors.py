@@ -48,4 +48,3 @@ def log_and_safe_error(
     rid = get_request_id_safe()
     logger.error(f"[{rid}] {log_prefix}: {exception!r}", exc_info=True)
     return safe_error_detail(client_message)
-

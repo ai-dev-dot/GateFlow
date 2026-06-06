@@ -108,7 +108,9 @@ class UsageService:
         (user_id, username) so both snapshots stay aligned; other
         dimensions group by the single dimension field.
         """
-        username_col = AuditLog.username.label("username") if include_username else null().label("username")
+        username_col = (
+            AuditLog.username.label("username") if include_username else null().label("username")
+        )
         columns = [
             dimension_field.label("dimension"),
             username_col,

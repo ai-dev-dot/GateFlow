@@ -156,9 +156,6 @@ async def test_preview_short_body_passes_through_unchanged(db_session, test_user
     """Bodies that fit within AUDIT_LOG_PREVIEW_CHARS are returned verbatim
     in the preview field. This is a deliberate trade-off — short prompts
     are visible in list view to ease admin debugging."""
-    from app.config import get_settings
-
-    settings = get_settings()
     short_body = "hello world"  # 11 chars, < 80
     service = AuditService(db_session)
     log = await service.create_pending_log(
@@ -263,9 +260,7 @@ async def test_record_admin_access_writes_meta_audit(db_session, admin_user, mon
 
     # Now admin views it (meta-audit)
     service = AuditService(db_session)
-    meta = await service.record_admin_access(
-        admin_user, target, ip_address="10.0.0.1"
-    )
+    meta = await service.record_admin_access(admin_user, target, ip_address="10.0.0.1")
     await db_session.commit()
 
     assert meta.path == "/admin/audit-access"
