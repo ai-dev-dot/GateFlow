@@ -550,7 +550,9 @@ async with engine.begin() as conn:
 | P1-4 | TODO | — | |
 | P1-5 | TODO | — | |
 | P1-6 | TODO | — | |
-| P1-7 | TODO | — | |
+| P1-7 | DONE | 88d8e70 | 删 MAX_LOG_CONTENT_LENGTH 100KB 死代码，body 透传 |
+| P1-4 | DONE | 4188d94 | get_messages 改 None/[] 契约，去掉 router 端 N+1 兜底 |
+| P1-5 | DONE | (next) | 抽 _get_capped_history，system 消息全保留 + 最近 50 user/assistant |
 | P1-8 | TODO | — | |
 | P1-9 | TODO | — | |
 | P2-1 | TODO | — | |
