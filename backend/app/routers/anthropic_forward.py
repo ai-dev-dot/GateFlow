@@ -31,6 +31,7 @@ from app.services.provider_key_service import ProviderKeyService
 from app.services.stream_forwarder import StreamForwarder
 from app.utils.errors import get_request_id_safe
 from app.utils.http_client import get_http_client
+from app.utils.tokens import estimate_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +129,7 @@ async def messages(
     )
 
     # Estimate tokens (use full message body)
-    request_tokens = max(1, sum(len(str(m.get("content", ""))) for m in messages) // 3)
+    request_tokens = estimate_tokens(messages)
 
     # Create pending audit log via AuditService (this is the P0-3 fix:
     # previously this path wrote NO audit log)

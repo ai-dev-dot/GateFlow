@@ -22,6 +22,7 @@ from app.services.provider_adapters import get_adapter
 from app.services.provider_key_service import ProviderKeyService
 from app.services.stream_forwarder import StreamForwarder
 from app.utils.http_client import get_http_client
+from app.utils.tokens import estimate_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -330,13 +331,4 @@ class ChatService:
     @staticmethod
     def _estimate_request_tokens(messages: list[dict]) -> int:
         """Estimate input tokens from full message history."""
-        total_chars = 0
-        for msg in messages:
-            content = msg.get("content", "")
-            if isinstance(content, str):
-                total_chars += len(content)
-            elif isinstance(content, list):
-                for part in content:
-                    if isinstance(part, dict):
-                        total_chars += len(part.get("text", ""))
-        return max(1, total_chars // 3)
+        return estimate_tokens(messages)

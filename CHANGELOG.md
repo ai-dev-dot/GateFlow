@@ -28,6 +28,7 @@
 - **DRY auth_middleware**：抽 `_resolve_credentials(credentials, db) -> (User, api_key_id, agent_type)` 共享 helper，`get_current_user` / `get_auth_context` 都基于它。**附带修复**：JWT 路径用显式 `UUID(sub)` 转换，SQLite 测试环境也能跑通（之前依赖 PG 隐式转换）
 - **DRY Anthropic bridge**：`StreamForwarder.forward()` 加 `transform_chunk`（bytes→bytes）和 `error_sse`（client-protocol 错误格式）钩子；非流式路径加公共 `save_after_stream()` 方法。`anthropic_forward.py` 的 80 行 `bridge_stream` 闭包删除，改为 `forwarder.forward(... transform_chunk=AnthropicBridgeTransformer(), error_sse=anthropic.error_sse)`，不再调用 `_save_after_stream` 私有方法
 - **DRY usage_service**：抽 `_build_summary_query(dimension_field, *, include_username, group_by_extra, filters)` 静态方法，`get_summary` 4 个维度（user/department/model/api_key）从 4 段 14 行 select 缩成 4 个 4 行调用
+- **DRY token 估算**：抽 `app/utils/tokens.estimate_tokens(messages)` 工具（CHARS_PER_TOKEN=3 启发式），替换 chat_service / gateway_service / anthropic_forward 三处重复实现。**附带改进**：Anthropic content block 列表（`[{"type":"text","text":"..."}]`）现在被正确求和，旧 inline 版本用 `str(content)` 强制转换会把 `None`/`int` 等错误类型估成 1 token
 - README 重写为「核心能力 + 技术栈」风格
 - 用量统计改为从 AuditLog 实时聚合，删除 `UsageStat` 聚合表
 - 审计日志新增 `api_key_name` 快照字段，所有统计维度（user / department / api_key）均基于 audit_log 快照聚合，保证历史不可变

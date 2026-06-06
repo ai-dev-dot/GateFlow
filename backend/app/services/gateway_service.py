@@ -24,6 +24,7 @@ from app.services.provider_adapters.base import BaseAdapter
 from app.services.provider_key_service import ProviderKeyService
 from app.services.stream_forwarder import StreamForwarder
 from app.utils.http_client import get_http_client
+from app.utils.tokens import estimate_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -205,17 +206,7 @@ class GatewayService:
         Assumes ~3 characters per token (mix of English/Chinese, conservative).
         This is a rough estimate; actual usage comes from upstream's usage field.
         """
-        messages = request_body.get("messages", [])
-        total_chars = 0
-        for msg in messages:
-            content = msg.get("content", "")
-            if isinstance(content, str):
-                total_chars += len(content)
-            elif isinstance(content, list):
-                for part in content:
-                    if isinstance(part, dict):
-                        total_chars += len(part.get("text", ""))
-        return max(1, total_chars // 3)
+        return estimate_tokens(request_body.get("messages", []))
 
 
 class GatewayError(Exception):
