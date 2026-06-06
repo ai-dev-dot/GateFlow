@@ -49,13 +49,19 @@ async def _override_user(target_user: User):
     return _override
 
 
-async def _make_log(test_user, body: str) -> AuditLog:
-    """Insert a log row as `test_user` with a Fernet-encrypted body."""
+async def _make_log(test_user, body: str, *, encrypt: bool = True) -> AuditLog:
+    """Insert a log row as `test_user` with a Fernet-encrypted body.
+
+    By default the body is encrypted (so tests that check decryption work
+    independently of the dev's env or CI's AUDIT_LOG_FULL_BODY setting).
+    Pass ``encrypt=False`` to simulate the FULL_BODY=false policy where
+    the body is stored as preview-only and request_body stays NULL.
+    """
     from app.config import get_settings
     from app.models.audit import AuditLog
 
     settings = get_settings()
-    encrypted = encrypt_key(body) if settings.AUDIT_LOG_FULL_BODY else None
+    encrypted = encrypt_key(body) if encrypt else None
     log = AuditLog(
         user_id=test_user.id,
         username=test_user.username,
@@ -174,15 +180,10 @@ async def test_detail_include_body_admin_returns_plaintext(
 
 
 @pytest.mark.asyncio
-async def test_detail_include_body_admin_no_body_stored(
-    db_session, test_user, admin_user, client, monkeypatch
-):
+async def test_detail_include_body_admin_no_body_stored(db_session, test_user, admin_user, client):
     """If the log was created with FULL_BODY=false, request_body is NULL
     and include_body=true returns null (no decryption attempted)."""
-    from app.config import get_settings
-
-    monkeypatch.setattr(get_settings(), "AUDIT_LOG_FULL_BODY", False)
-    log = await _make_log(test_user, "preview only content, no encrypted body")
+    log = await _make_log(test_user, "preview only content, no encrypted body", encrypt=False)
     db_session.add(log)
     await db_session.commit()
     await db_session.refresh(log)
