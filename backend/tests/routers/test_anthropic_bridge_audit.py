@@ -4,7 +4,7 @@ This test pins down the bug where `POST /v1/messages` (Anthropic format) to an
 OpenAI-compatible upstream was not creating any AuditLog row.
 
 We verify the fix by exercising the same code path (audit log creation +
-StreamForwarder._save_after_stream) that the bridge router uses, with a
+StreamForwarder.save_after_stream) that the bridge router uses, with a
 mocked OpenAI upstream. This avoids the auth-middleware UUID type issue
 that arises only when running on SQLite (production uses PostgreSQL).
 """
@@ -58,7 +58,7 @@ async def test_anthropic_bridge_path_creates_audit_log(db_session, test_user):
 
     Verifies the same code path the bridge router uses:
     1. AuditService.create_pending_log with path='/v1/messages'
-    2. StreamForwarder._save_after_stream updates status='completed' on 200
+    2. StreamForwarder.save_after_stream updates status='completed' on 200
     """
     # Setup: ModelConfig + ProviderKey (same as the bridge router)
     mc = ModelConfig(
@@ -96,7 +96,7 @@ async def test_anthropic_bridge_path_creates_audit_log(db_session, test_user):
     await db_session.commit()
     await db_session.refresh(audit_log)
 
-    # Step 2: simulate successful bridge completion (calls _save_after_stream)
+    # Step 2: simulate successful bridge completion (calls save_after_stream)
     factory = _session_factory(db_session)
     forwarder = StreamForwarder(db_session, OpenAIAdapter(), session_factory=factory)
     fake_response = FakeOpenAIResponse(
@@ -114,7 +114,7 @@ async def test_anthropic_bridge_path_creates_audit_log(db_session, test_user):
         "app.utils.http_client.get_http_client",
         AsyncMock(return_value=fake_client),
     ):
-        await forwarder._save_after_stream(
+        await forwarder.save_after_stream(
             audit_log_id=audit_log.id,
             provider_key_id=pk.id,
             status_code=200,

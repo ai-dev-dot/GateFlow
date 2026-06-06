@@ -260,3 +260,130 @@ async def test_token_counts_captured_from_usage_chunk(db_session, test_user):
         # only applies to transformed mode. In passthrough we keep the estimate.
         # For now, just verify log is completed.
         assert log.status == "completed"
+
+
+# ---------- P1-2: public save_after_stream + transform_chunk hook ----------
+
+
+@pytest.mark.asyncio
+async def test_save_after_stream_public_alias_updates_audit(db_session, test_user):
+    """StreamForwarder.save_after_stream is the public entry point for one-shot bridges.
+
+    It must produce the same audit + key stats updates as the private impl,
+    so external callers (Anthropic non-streaming bridge) can use it without
+    reaching into a leading-underscore method.
+    """
+    audit_log, pk = await _make_audit_and_key(db_session, test_user)
+    factory = _session_factory(db_session)
+    forwarder = StreamForwarder(db_session, OpenAIAdapter(), session_factory=factory)
+
+    await forwarder.save_after_stream(
+        audit_log_id=audit_log.id,
+        provider_key_id=pk.id,
+        status_code=200,
+        request_tokens=11,
+        response_tokens=22,
+        input_tokens=0,
+        latency_ms=300,
+        full_content="",
+        on_complete=None,
+    )
+
+    async with factory() as verify:
+        result = await verify.execute(select(AuditLog).where(AuditLog.id == audit_log.id))
+        log = result.scalar_one()
+        assert log.status == "completed"
+        assert log.status_code == 200
+        assert log.request_tokens == 11
+        assert log.response_tokens == 22
+        assert log.latency_ms == 300
+
+
+@pytest.mark.asyncio
+async def test_forward_with_transform_chunk_emits_anth_format(db_session, test_user):
+    """``transform_chunk`` hook lets a caller rewrite SSE bytes on the fly.
+
+    Verifies the Anthropic-bridge use case: upstream emits OpenAI SSE, the
+    client expects Anthropic SSE, and the transform_chunk callable does the
+    conversion while the forwarder still parses the ORIGINAL upstream chunk
+    for token stats.
+    """
+    from app.services.provider_adapters import OpenAIAdapter
+    from app.services.provider_adapters.anthropic_adapter import AnthropicBridgeTransformer
+
+    audit_log, pk = await _make_audit_and_key(db_session, test_user)
+    factory = _session_factory(db_session)
+    forwarder = StreamForwarder(db_session, OpenAIAdapter(), session_factory=factory)
+
+    fake_client = FakeUpstreamStream(
+        200,
+        [
+            make_sse_chunk("ignored-text"),  # the openai body has 'content' so it's an actual text chunk
+            b"data: [DONE]\n\n",
+        ],
+    )
+
+    with patch(
+        "app.services.stream_forwarder.get_http_client", AsyncMock(return_value=fake_client)
+    ):
+        response = await forwarder.forward(
+            upstream_url="https://api.openai.com/v1/chat/completions",
+            upstream_headers={"Authorization": "Bearer sk-test"},
+            forward_body={"model": "gpt-4", "stream": True, "messages": []},
+            audit_log=audit_log,
+            provider_key_id=pk.id,
+            request_tokens=10,
+            transform_chunk=AnthropicBridgeTransformer(),
+        )
+        chunks = []
+        async for chunk in response.body_iterator:
+            chunks.append(chunk)
+        body = "".join(c.decode("utf-8") if isinstance(c, bytes) else c for c in chunks)
+
+    # Client sees Anthropic-formatted SSE
+    assert "event: content_block_delta" in body
+    # And the audit log was finalized as completed
+    async with factory() as verify:
+        result = await verify.execute(select(AuditLog).where(AuditLog.id == audit_log.id))
+        log = result.scalar_one()
+        assert log.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_forward_with_error_sse_hook_uses_client_format(db_session, test_user):
+    """``error_sse`` hook lets a caller format errors in the client's protocol.
+
+    Verifies that when the upstream returns non-200, the forwarder yields the
+    caller-supplied formatter (not the upstream adapter's format_error) so
+    bridge clients see errors in their expected protocol.
+    """
+    from app.services.provider_adapters import OpenAIAdapter
+
+    audit_log, pk = await _make_audit_and_key(db_session, test_user)
+    factory = _session_factory(db_session)
+    forwarder = StreamForwarder(db_session, OpenAIAdapter(), session_factory=factory)
+
+    fake_client = FakeUpstreamStream(500, [b"oops"])
+
+    def client_error_sse(message: str, error_type: str) -> str:
+        return f"event: error\ndata: CLIENT_FORMAT: {message}\n\n"
+
+    with patch(
+        "app.services.stream_forwarder.get_http_client", AsyncMock(return_value=fake_client)
+    ):
+        response = await forwarder.forward(
+            upstream_url="https://api.openai.com/v1/chat/completions",
+            upstream_headers={"Authorization": "Bearer sk-test"},
+            forward_body={"model": "gpt-4", "stream": True, "messages": []},
+            audit_log=audit_log,
+            provider_key_id=pk.id,
+            request_tokens=10,
+            error_sse=client_error_sse,
+        )
+        chunks = []
+        async for chunk in response.body_iterator:
+            chunks.append(chunk)
+        # body_iterator yields whatever the generator yields (str or bytes).
+        body = "".join(c.decode("utf-8") if isinstance(c, bytes) else c for c in chunks)
+
+    assert "CLIENT_FORMAT: Upstream returned 500" in body

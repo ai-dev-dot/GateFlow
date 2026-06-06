@@ -15,6 +15,8 @@ This module owns:
 
 Callers customize via optional hooks:
 - emit_sse(event) -> str:  how to serialize each event to client
+- transform_chunk(bytes) -> bytes: byte-level protocol bridge (e.g. OpenAI→Anthropic SSE)
+- error_sse(message, type) -> str: client-protocol error formatter (defaults to upstream)
 - on_complete(db, content, status_code): post-stream persistence (e.g. save AI message)
 
 流结束后的统计更新使用新 session（不污染原请求事务）。
@@ -44,6 +46,16 @@ STREAM_TIMEOUT = httpx.Timeout(300.0, read=300.0)
 # Hook signatures
 EmitSSE = Callable[[StreamEvent], str]
 # Returns: SSE string to send to client. Return empty string to skip.
+
+TransformChunk = Callable[[bytes], bytes]
+# Stateful byte→byte transformer applied to each upstream chunk before
+# yielding in passthrough mode. Used by protocol bridges (e.g. Anthropic→OpenAI)
+# to convert SSE formats on the fly. The transformer is invoked with the
+# ORIGINAL upstream bytes; token stats are captured from the original chunk.
+
+ErrorSSE = Callable[[str, str], str]
+# (message, error_type) → SSE string for client. Defaults to adapter.error_sse
+# in the upstream protocol; bridges pass a client-protocol formatter here.
 
 OnComplete = Callable[[AsyncSession, str, int], Awaitable[None]]
 # Called once after stream ends (success or failure). Args: db, full_content, status_code.
@@ -104,6 +116,8 @@ class StreamForwarder:
         provider_key_id: UUID,
         request_tokens: int,
         emit_sse: EmitSSE | None = None,
+        transform_chunk: TransformChunk | None = None,
+        error_sse: ErrorSSE | None = None,
         accumulate_text: bool = False,
         on_complete: OnComplete | None = None,
     ) -> StreamingResponse:
@@ -118,6 +132,16 @@ class StreamForwarder:
             request_tokens: pre-estimated input token count
             emit_sse: if None, raw bytes are passed through (gateway path).
                       If set, called for each event; return SSE string to send.
+            transform_chunk: optional stateful byte→byte transformer applied to
+                             each upstream chunk before yielding in passthrough
+                             mode. Used by protocol bridges (e.g. Anthropic
+                             client + OpenAI upstream) to convert SSE bytes
+                             on the fly. Token stats are still parsed from the
+                             ORIGINAL chunk using the upstream adapter.
+            error_sse: optional (message, error_type) → SSE string. Defaults
+                       to ``adapter.error_sse`` (upstream protocol). Bridges
+                       pass a client-protocol formatter so error events use
+                       the client's expected format.
             accumulate_text: if True, build full_content from event.text
                              (for Chat/bridge saving AI message).
             on_complete: async hook called after stream with (db, full_content, status_code).
@@ -127,6 +151,8 @@ class StreamForwarder:
             FastAPI StreamingResponse ready to return from a route.
         """
         adapter = self.adapter
+        # Resolve error SSE formatter: caller-supplied or upstream-protocol default.
+        error_formatter = error_sse if error_sse is not None else adapter.error_sse
         start_time = time.monotonic()
 
         async def stream_generator():
@@ -154,16 +180,13 @@ class StreamForwarder:
                             error_body += chunk
                         error_text = error_body.decode("utf-8", errors="replace")
                         logger.warning(f"Upstream error {status_code}: {error_text[:500]}")
-                        yield adapter.error_sse(f"Upstream returned {status_code}")
+                        yield error_formatter(f"Upstream returned {status_code}", "upstream_error")
                         return
 
                     async for chunk in upstream_response.aiter_bytes():
-                        # Raw passthrough mode: yield bytes directly to client.
-                        if emit_sse is None:
-                            yield chunk
-
-                        # Parse for stats + optional content accumulation.
-                        # (Always parse, even in passthrough mode, to capture token counts.)
+                        # Parse ORIGINAL chunk for stats (uses upstream adapter).
+                        # Token counts must come from the upstream protocol, not
+                        # any client-protocol transform applied below.
                         chunk_text = chunk.decode("utf-8", errors="replace")
                         for line in chunk_text.split("\n"):
                             line = line.strip()
@@ -178,6 +201,7 @@ class StreamForwarder:
                                         # Fallback: count text chunks as rough token estimate
                                         if (
                                             emit_sse is None
+                                            and transform_chunk is None
                                             and event.text
                                             and not event.output_tokens
                                         ):
@@ -192,9 +216,18 @@ class StreamForwarder:
                                 continue
                             buffer_lines.append(line)
 
+                        # Apply client-protocol byte transform (e.g. OpenAI→Anthropic SSE)
+                        # AFTER stats are captured from the original chunk.
+                        if transform_chunk is not None:
+                            chunk = transform_chunk(chunk)
+
+                        # Raw passthrough mode: yield bytes directly to client.
+                        if emit_sse is None:
+                            yield chunk
+
             except httpx.ReadTimeout:
                 logger.error("Upstream read timeout")
-                yield adapter.error_sse("Upstream read timeout", "timeout")
+                yield error_formatter("Upstream read timeout", "timeout")
                 status_code = 504
             except Exception as e:
                 # P0-4: never leak str(exception) to client. Log full
@@ -204,7 +237,7 @@ class StreamForwarder:
                 from app.utils.errors import get_request_id_safe
                 rid = get_request_id_safe()
                 logger.error(f"[{rid}] Stream error: {e!r}", exc_info=True)
-                yield adapter.error_sse(
+                yield error_formatter(
                     f"Internal error (request_id: {rid})",
                     "internal_error",
                 )
@@ -231,6 +264,38 @@ class StreamForwarder:
                 "Connection": "keep-alive",
                 "X-Accel-Buffering": "no",
             },
+        )
+
+    async def save_after_stream(
+        self,
+        *,
+        audit_log_id: UUID,
+        provider_key_id: UUID,
+        status_code: int,
+        request_tokens: int,
+        response_tokens: int = 0,
+        input_tokens: int = 0,
+        latency_ms: int = 0,
+        full_content: str = "",
+        on_complete: OnComplete | None = None,
+    ) -> None:
+        """Public alias of :meth:`_save_after_stream` for callers outside the
+        streaming generator (e.g. one-shot POST bridges).
+
+        Updates the audit log status, runs the optional on_complete hook, and
+        bumps provider key statistics in a fresh session so the work survives
+        caller cancellation.
+        """
+        await self._save_after_stream(
+            audit_log_id=audit_log_id,
+            provider_key_id=provider_key_id,
+            status_code=status_code,
+            request_tokens=request_tokens,
+            response_tokens=response_tokens,
+            input_tokens=input_tokens,
+            latency_ms=latency_ms,
+            full_content=full_content,
+            on_complete=on_complete,
         )
 
     async def _save_after_stream(

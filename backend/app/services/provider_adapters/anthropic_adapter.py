@@ -282,3 +282,79 @@ class AnthropicAdapter(BaseAdapter):
             events += f"event: message_stop\ndata: {json.dumps({'type': 'message_stop'})}\n\n"
 
         return events
+
+
+# Shared adapter instance used by the bridge transformer below. Stateful
+# conversion logic lives in AnthropicBridgeTransformer; stateless
+# conversions (e.g. request bodies) are best called on a fresh adapter.
+_singleton_anthropic_adapter = AnthropicAdapter()
+
+
+class AnthropicBridgeTransformer:
+    """Stateful byte→byte transformer: OpenAI SSE → Anthropic SSE.
+
+    Designed to plug into ``StreamForwarder.forward(transform_chunk=...)``.
+    Maintains a line buffer across calls (chunks may split on any byte
+    boundary) and a ``done`` flag to short-circuit after ``[DONE]``.
+
+    The forwarder parses the *original* (pre-transform) chunk for token
+    statistics using the upstream adapter; this transformer only formats
+    bytes for the client.
+    """
+
+    def __init__(self) -> None:
+        self._buffer: str = ""
+        self._done: bool = False
+
+    def __call__(self, chunk: bytes) -> bytes:
+        if self._done:
+            return b""
+
+        chunk_text = chunk.decode("utf-8", errors="replace")
+        self._buffer += chunk_text
+        out: list[str] = []
+
+        while "\n" in self._buffer:
+            line, self._buffer = self._buffer.split("\n", 1)
+            line = line.strip()
+            if not line or not line.startswith("data:"):
+                continue
+            data_str = line[5:].strip()
+            if data_str == "[DONE]":
+                self._done = True
+                return "".join(out).encode("utf-8")
+            try:
+                data = json.loads(data_str)
+            except json.JSONDecodeError:
+                continue
+            sse = _singleton_anthropic_adapter.from_openai_sse_chunk(data)
+            if sse:
+                out.append(sse)
+
+        return "".join(out).encode("utf-8")
+
+    def flush(self) -> bytes:
+        """Emit any remaining buffered content. Call after the upstream
+        stream ends in case the final chunk lacked a trailing newline.
+        """
+        if not self._buffer.strip() or self._done:
+            return b""
+        tail = self._buffer
+        self._buffer = ""
+        out: list[str] = []
+        for line in tail.split("\n"):
+            line = line.strip()
+            if not line or not line.startswith("data:"):
+                continue
+            data_str = line[5:].strip()
+            if data_str == "[DONE]":
+                self._done = True
+                continue
+            try:
+                data = json.loads(data_str)
+            except json.JSONDecodeError:
+                continue
+            sse = _singleton_anthropic_adapter.from_openai_sse_chunk(data)
+            if sse:
+                out.append(sse)
+        return "".join(out).encode("utf-8")
