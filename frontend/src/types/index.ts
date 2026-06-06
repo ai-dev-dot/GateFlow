@@ -180,6 +180,7 @@ export interface PaginatedResponse<T> {
 export interface SystemConfig {
   backup_dir: string;
   backup_include_audit_logs: boolean;
+  pg_dump_path: string | null;
   updated_at: string;
 }
 

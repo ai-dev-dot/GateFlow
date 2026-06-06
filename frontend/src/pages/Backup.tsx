@@ -145,6 +145,20 @@ export default function Backup() {
             />
           </Form.Item>
           <Form.Item
+            name="pg_dump_path"
+            label="pg_dump 路径"
+            extra={
+              <span>
+                PostgreSQL 客户端工具 <code>pg_dump</code> 的绝对路径。
+                Windows 一般在 PostgreSQL 安装目录的 <code>bin\pg_dump.exe</code>
+                下（需根据实际安装位置填写），Linux 常见为
+                <code>/usr/bin/pg_dump</code>。点击「立即备份」前必须设置。
+              </span>
+            }
+          >
+            <Input placeholder="如 C:\Program Files\PostgreSQL\16\bin\pg_dump.exe" />
+          </Form.Item>
+          <Form.Item
             name="backup_include_audit_logs"
             valuePropName="checked"
             extra="LLM 调用日志通常很大；建议保持未勾选（仅备份配置/用户/对话等核心数据）"

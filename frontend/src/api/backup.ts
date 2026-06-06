@@ -11,6 +11,7 @@ export async function getConfig(): Promise<SystemConfig> {
 export async function updateConfig(data: {
   backup_dir?: string;
   backup_include_audit_logs?: boolean;
+  pg_dump_path?: string | null;
 }): Promise<SystemConfig> {
   const res = await client.put('/backup/config', data);
   return res.data;

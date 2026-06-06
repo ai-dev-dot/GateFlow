@@ -9,6 +9,12 @@ AUDIT_LOG_RETENTION_DAYS in config).
 
 PG-only: SQLite (used in tests) raises BackupNotSupportedError cleanly
 so the endpoint can return 501 instead of crashing.
+
+pg_dump path: the admin sets it explicitly in the /backup settings UI
+(``system_config.pg_dump_path``). The service does NOT auto-discover —
+admin owns the choice. If the path is missing or doesn't point to an
+existing file, ``run_backup`` raises ``BackupFailedError`` with a clear
+message and the router surfaces it to the UI.
 """
 
 from __future__ import annotations
@@ -44,7 +50,10 @@ class BackupNotSupportedError(Exception):
 
 
 class BackupFailedError(Exception):
-    """Raised when pg_dump returns non-zero. Carries stderr for diagnostics."""
+    """Raised when pg_dump returns non-zero, the binary path is missing,
+    or the configured path doesn't point to a real file. Carries stderr
+    for diagnostics (may be empty if the failure is pre-subprocess).
+    """
 
     def __init__(self, message: str, *, returncode: int, stderr: str):
         super().__init__(message)
@@ -112,10 +121,12 @@ async def update_config(
     *,
     backup_dir: str | None = None,
     backup_include_audit_logs: bool | None = None,
+    pg_dump_path: str | None = None,
 ) -> SystemConfig:
-    """Update the singleton config. Both fields optional (partial update).
+    """Update the singleton config. All fields optional (partial update).
 
-    Raises ValueError on invalid input (caller maps to 422).
+    To CLEAR ``pg_dump_path``, pass an empty string. The router schema
+    maps "" → None before reaching this function.
     """
     config = await get_config(db)
 
@@ -127,6 +138,13 @@ async def update_config(
 
     if backup_include_audit_logs is not None:
         config.backup_include_audit_logs = backup_include_audit_logs
+
+    if pg_dump_path is not None:
+        # Schema layer has already mapped "" → None and stripped whitespace.
+        # We just assign — the run_backup check catches "file doesn't exist"
+        # at call time, not at config-save time, so admin can save a path
+        # before the file is reachable (e.g. before a service restart).
+        config.pg_dump_path = pg_dump_path
 
     await db.commit()
     await db.refresh(config)
@@ -142,7 +160,8 @@ async def run_backup(db: AsyncSession) -> dict:
     Returns a dict suitable for BackupResultResponse.
     Raises:
         BackupNotSupportedError: DATABASE_URL is not PG.
-        BackupFailedError: pg_dump failed (non-zero returncode or parse error).
+        BackupFailedError: pg_dump path is unset, file missing, or
+            pg_dump returns non-zero.
     """
     settings = get_settings()
     if not is_postgres_url(settings.DATABASE_URL):
@@ -156,13 +175,31 @@ async def run_backup(db: AsyncSession) -> dict:
     backup_dir = config.backup_dir
     os.makedirs(backup_dir, exist_ok=True)
 
+    # Resolve pg_dump binary from the admin-configured path. We do NOT
+    # auto-search PATH or any hardcoded locations — admin owns the choice.
+    if not config.pg_dump_path:
+        raise BackupFailedError(
+            "pg_dump 路径未设置。请先在'备份设置'中填写 pg_dump 可执行文件的绝对路径"
+            "（例如 E:\\PostgreSQL\\18\\bin\\pg_dump.exe）。",
+            returncode=-1,
+            stderr="",
+        )
+    if not os.path.isfile(config.pg_dump_path):
+        raise BackupFailedError(
+            f"pg_dump 路径无效：'{config.pg_dump_path}' 不存在或不是文件。"
+            "请到'备份设置'中检查并修正。",
+            returncode=-1,
+            stderr="",
+        )
+
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
     filename = f"gateflow_{timestamp}.sql"
     out_path = os.path.join(backup_dir, filename)
 
     pg = parse_pg_url(settings.DATABASE_URL)
+
     argv: list[str] = [
-        "pg_dump",
+        config.pg_dump_path,
         "-h",
         pg["host"],
         "-p",
@@ -188,8 +225,7 @@ async def run_backup(db: AsyncSession) -> dict:
     # Use subprocess.run in a worker thread (asyncio.to_thread) rather than
     # asyncio.create_subprocess_exec. The asyncio subprocess transport is
     # NotImplementedError on Windows' default ProactorEventLoop, so a sync
-    # subprocess.run + to_thread is the cross-platform-safe option. The
-    # lambda unpacks argv so subprocess.run sees positional program+args.
+    # subprocess.run + to_thread is the cross-platform-safe option.
     try:
         completed = await asyncio.to_thread(
             lambda: subprocess.run(
@@ -200,9 +236,10 @@ async def run_backup(db: AsyncSession) -> dict:
             )
         )
     except FileNotFoundError as e:
-        # pg_dump binary not installed
+        # Race: path passed the os.path.isfile() check but the binary
+        # was removed before subprocess spawned (e.g. admin edit).
         raise BackupFailedError(
-            "pg_dump binary not found in PATH",
+            f"pg_dump 路径已失效：'{config.pg_dump_path}' 找不到。",
             returncode=-1,
             stderr=str(e),
         ) from e

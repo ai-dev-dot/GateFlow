@@ -7,6 +7,7 @@ from app.config import get_settings
 from app.database import async_session, engine
 from app.models import Base
 from app.models.agent_type import AgentType
+from app.models.system_config import ensure_columns as ensure_system_config_columns
 from app.routers.agent_types import router as agent_types_router
 from app.routers.anthropic_forward import router as anthropic_forward_router
 from app.routers.api_keys import router as api_keys_router
@@ -38,6 +39,10 @@ async def lifespan(app: FastAPI):
     # Create tables on startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Idempotent column additions for tables that already exist.
+    # P2-5 will replace this with Alembic; until then, ALTER TABLE here.
+    await ensure_system_config_columns(engine)
 
     # Initialize admin user
     async with async_session() as db:

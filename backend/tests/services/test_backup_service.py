@@ -2,11 +2,13 @@
 
 Covers:
 - Lazy init of SystemConfig singleton (get_config)
-- Partial / full update of SystemConfig (update_config)
+- Partial / full update of SystemConfig (update_config), incl. pg_dump_path
 - Validation: empty / whitespace backup_dir rejected
 - run_backup SQLite path: clean error, no subprocess call
 - run_backup PG path: correct argv + env, exclude flag toggles, rc propagation
 - run_backup creates backup_dir if missing
+- run_backup pg_dump_path unset → clear error
+- run_backup pg_dump_path points at non-existent file → clear error
 - list_backups: sorted desc, .sql only, missing dir → []
 """
 
@@ -30,24 +32,19 @@ from app.services.backup_service import (
     update_config,
 )
 
-# ---------- helpers ----------
 
+def _create_fake_pg_dump(tmp_path) -> str:
+    """Write a tiny executable-shaped file and return its path.
 
-def _make_completed(returncode: int = 0, stderr: bytes = b"", write_to_out: bool = True):
-    """Build a subprocess.CompletedProcess-like object for mocking subprocess.run.
-
-    If ``write_to_out`` is True, a tiny dummy file is created at the path
-    the argv's ``-f`` flag points to (mimicking pg_dump's actual behavior).
+    We never actually run it (subprocess.run is mocked), so any file
+    that passes os.path.isfile works. Use a real file rather than
+    monkeypatching isfile so the service's check is end-to-end real.
     """
-
-    def _factory(*argv, **kwargs):
-        if write_to_out:
-            out_idx = argv.index("-f") + 1
-            with open(argv[out_idx], "w", encoding="utf-8") as f:
-                f.write("-- PG dump\n")
-        return subprocess.CompletedProcess(args=argv, returncode=returncode, stderr=stderr)
-
-    return _factory
+    fake = tmp_path / "fake_pg_dump"
+    fake.write_bytes(b"#!/bin/sh\necho fake\n")
+    if os.name != "nt":
+        fake.chmod(0o755)
+    return str(fake)
 
 
 # ---------- get_config ----------
@@ -60,6 +57,7 @@ async def test_get_config_creates_default_if_missing(db_session):
     assert cfg.id == 1
     assert cfg.backup_dir == DEFAULT_BACKUP_DIR
     assert cfg.backup_include_audit_logs == DEFAULT_BACKUP_INCLUDE_AUDIT_LOGS
+    assert cfg.pg_dump_path is None  # admin must opt in
     assert cfg.updated_at is not None
 
 
@@ -69,11 +67,13 @@ async def test_get_config_returns_existing_row(db_session):
     cfg = await get_config(db_session)
     cfg.backup_dir = "/tmp/already-set"
     cfg.backup_include_audit_logs = True
+    cfg.pg_dump_path = "/usr/bin/pg_dump"
     await db_session.commit()
 
     again = await get_config(db_session)
     assert again.backup_dir == "/tmp/already-set"
     assert again.backup_include_audit_logs is True
+    assert again.pg_dump_path == "/usr/bin/pg_dump"
 
 
 # ---------- update_config ----------
@@ -81,7 +81,7 @@ async def test_get_config_returns_existing_row(db_session):
 
 @pytest.mark.asyncio
 async def test_update_config_persists_values(db_session):
-    """Both fields updated; read-back matches; updated_at refreshed."""
+    """All three fields updated; read-back matches; updated_at refreshed."""
     await get_config(db_session)
     before = (await get_config(db_session)).updated_at
 
@@ -89,23 +89,32 @@ async def test_update_config_persists_values(db_session):
         db_session,
         backup_dir="/var/backups/gateflow",
         backup_include_audit_logs=True,
+        pg_dump_path="/usr/bin/pg_dump",
     )
     assert updated.backup_dir == "/var/backups/gateflow"
     assert updated.backup_include_audit_logs is True
+    assert updated.pg_dump_path == "/usr/bin/pg_dump"
     assert updated.updated_at >= before
 
     again = await get_config(db_session)
     assert again.backup_dir == "/var/backups/gateflow"
     assert again.backup_include_audit_logs is True
+    assert again.pg_dump_path == "/usr/bin/pg_dump"
 
 
 @pytest.mark.asyncio
 async def test_update_config_partial_update_keeps_other_field(db_session):
-    """Only one field supplied → other field unchanged."""
-    await update_config(db_session, backup_dir="/srv/bu", backup_include_audit_logs=False)
+    """Only one field supplied → other fields unchanged."""
+    await update_config(
+        db_session,
+        backup_dir="/srv/bu",
+        backup_include_audit_logs=False,
+        pg_dump_path="/usr/bin/pg_dump",
+    )
     again = await update_config(db_session, backup_dir="/srv/bu2")
     assert again.backup_dir == "/srv/bu2"
-    assert again.backup_include_audit_logs is False  # unchanged
+    assert again.backup_include_audit_logs is False
+    assert again.pg_dump_path == "/usr/bin/pg_dump"
 
 
 @pytest.mark.asyncio
@@ -122,11 +131,21 @@ async def test_update_config_strips_whitespace(db_session):
     assert updated.backup_dir == "/srv/bu"
 
 
+@pytest.mark.asyncio
+async def test_update_config_pg_dump_path_can_be_cleared_to_none(db_session):
+    """Passing None is a no-op (existing path kept). To clear, the router
+    schema maps "" → None, so the service treats both as "don't touch"."""
+    await update_config(db_session, pg_dump_path="/old/path")
+    # Calling with None leaves the existing value alone
+    again = await update_config(db_session, pg_dump_path=None)
+    assert again.pg_dump_path == "/old/path"
+
+
 # ---------- run_backup: SQLite path ----------
 
 
 @pytest.mark.asyncio
-async def test_run_backup_skipped_on_sqlite(db_session, monkeypatch):
+async def test_run_backup_skipped_on_sqlite(db_session, monkeypatch, tmp_path):
     """When DATABASE_URL is not PG, service must raise BackupNotSupportedError
     and NOT call pg_dump. The check is independent of test env (the local
     .env here is PG, so we force the URL check to fail)."""
@@ -144,13 +163,64 @@ async def test_run_backup_skipped_on_sqlite(db_session, monkeypatch):
         await run_backup(db_session)
 
 
+# ---------- run_backup: pg_dump_path missing / invalid ----------
+
+
+@pytest.mark.asyncio
+async def test_run_backup_no_pg_dump_path_raises(db_session, monkeypatch, tmp_path):
+    """pg_dump_path is None → BackupFailedError with admin-friendly message."""
+    await update_config(db_session, backup_dir=str(tmp_path), backup_include_audit_logs=True)
+    # pg_dump_path stays None (admin never set it)
+
+    monkeypatch.setattr(backup_service, "is_postgres_url", lambda url: True)
+
+    with (
+        patch.object(
+            backup_service.subprocess,
+            "run",
+            new=MagicMock(side_effect=AssertionError("must not be called")),
+        ),
+        pytest.raises(BackupFailedError, match="pg_dump 路径未设置"),
+    ):
+        await run_backup(db_session)
+
+
+@pytest.mark.asyncio
+async def test_run_backup_pg_dump_path_nonexistent_raises(db_session, monkeypatch, tmp_path):
+    """pg_dump_path points at a file that doesn't exist → BackupFailedError."""
+    await update_config(
+        db_session,
+        backup_dir=str(tmp_path),
+        backup_include_audit_logs=True,
+        pg_dump_path="/no/such/file/pg_dump",
+    )
+
+    monkeypatch.setattr(backup_service, "is_postgres_url", lambda url: True)
+
+    with (
+        patch.object(
+            backup_service.subprocess,
+            "run",
+            new=MagicMock(side_effect=AssertionError("must not be called")),
+        ),
+        pytest.raises(BackupFailedError, match="pg_dump 路径无效"),
+    ):
+        await run_backup(db_session)
+
+
 # ---------- run_backup: PG path (mocked subprocess) ----------
 
 
 @pytest.mark.asyncio
 async def test_run_backup_pg_path_invokes_pg_dump(db_session, monkeypatch, tmp_path):
     """Mock subprocess.run; verify argv + env + result dict shape + file written."""
-    await update_config(db_session, backup_dir=str(tmp_path), backup_include_audit_logs=True)
+    pg_dump_bin = _create_fake_pg_dump(tmp_path)
+    await update_config(
+        db_session,
+        backup_dir=str(tmp_path),
+        backup_include_audit_logs=True,
+        pg_dump_path=pg_dump_bin,
+    )
 
     # Force the URL check to pass (test env is SQLite)
     monkeypatch.setattr(backup_service, "is_postgres_url", lambda url: True)
@@ -175,7 +245,6 @@ async def test_run_backup_pg_path_invokes_pg_dump(db_session, monkeypatch, tmp_p
         captured["argv"] = program_argv
         captured["env"] = kwargs.get("env")
         # Write a small dummy file at the path pg_dump would have written.
-        # argv layout: [pg_dump, -h, host, -p, port, -U, user, -d, db, -f, path, ...]
         out_idx = program_argv.index("-f") + 1
         out_path = program_argv[out_idx]
         with open(out_path, "w", encoding="utf-8") as f:
@@ -192,7 +261,7 @@ async def test_run_backup_pg_path_invokes_pg_dump(db_session, monkeypatch, tmp_p
     assert result["excluded_audit_logs"] is False
     # argv checks
     argv = captured["argv"]
-    assert argv[0] == "pg_dump"
+    assert argv[0] == pg_dump_bin
     assert "-h" in argv and "db.local" in argv
     assert "-U" in argv and "alice" in argv
     assert "gateflow" in argv  # db name
@@ -205,7 +274,13 @@ async def test_run_backup_pg_path_invokes_pg_dump(db_session, monkeypatch, tmp_p
 @pytest.mark.asyncio
 async def test_run_backup_excludes_audit_logs_by_default(db_session, monkeypatch, tmp_path):
     """backup_include_audit_logs=False → argv contains --exclude-table-data=public.audit_logs."""
-    await update_config(db_session, backup_dir=str(tmp_path), backup_include_audit_logs=False)
+    pg_dump_bin = _create_fake_pg_dump(tmp_path)
+    await update_config(
+        db_session,
+        backup_dir=str(tmp_path),
+        backup_include_audit_logs=False,
+        pg_dump_path=pg_dump_bin,
+    )
 
     monkeypatch.setattr(backup_service, "is_postgres_url", lambda url: True)
     monkeypatch.setattr(
@@ -240,7 +315,13 @@ async def test_run_backup_excludes_audit_logs_by_default(db_session, monkeypatch
 @pytest.mark.asyncio
 async def test_run_backup_propagates_nonzero_returncode(db_session, monkeypatch, tmp_path):
     """pg_dump returns 1 → service raises BackupFailedError + deletes partial file."""
-    await update_config(db_session, backup_dir=str(tmp_path), backup_include_audit_logs=True)
+    pg_dump_bin = _create_fake_pg_dump(tmp_path)
+    await update_config(
+        db_session,
+        backup_dir=str(tmp_path),
+        backup_include_audit_logs=True,
+        pg_dump_path=pg_dump_bin,
+    )
 
     monkeypatch.setattr(backup_service, "is_postgres_url", lambda url: True)
     monkeypatch.setattr(
@@ -279,9 +360,16 @@ async def test_run_backup_propagates_nonzero_returncode(db_session, monkeypatch,
 
 
 @pytest.mark.asyncio
-async def test_run_backup_handles_missing_pg_dump_binary(db_session, monkeypatch, tmp_path):
-    """FileNotFoundError on subprocess.run → BackupFailedError."""
-    await update_config(db_session, backup_dir=str(tmp_path), backup_include_audit_logs=True)
+async def test_run_backup_handles_missing_pg_dump_at_subprocess(db_session, monkeypatch, tmp_path):
+    """Race: path passed os.path.isfile but subprocess can't find it
+    (e.g. admin deleted the file between the check and the spawn)."""
+    pg_dump_bin = _create_fake_pg_dump(tmp_path)
+    await update_config(
+        db_session,
+        backup_dir=str(tmp_path),
+        backup_include_audit_logs=True,
+        pg_dump_path=pg_dump_bin,
+    )
 
     monkeypatch.setattr(backup_service, "is_postgres_url", lambda url: True)
     monkeypatch.setattr(
@@ -297,20 +385,26 @@ async def test_run_backup_handles_missing_pg_dump_binary(db_session, monkeypatch
     )
 
     def fake_run(*args, **kwargs):
-        raise FileNotFoundError("No such file or directory: 'pg_dump'")
+        raise FileNotFoundError("No such file or directory")
 
     monkeypatch.setattr(backup_service.subprocess, "run", fake_run)
 
-    with pytest.raises(BackupFailedError, match="pg_dump binary not found"):
+    with pytest.raises(BackupFailedError, match="pg_dump 路径已失效"):
         await run_backup(db_session)
 
 
 @pytest.mark.asyncio
 async def test_run_backup_creates_backup_dir_if_missing(db_session, monkeypatch, tmp_path):
     """backup_dir points at a non-existent path → service makedirs it."""
+    pg_dump_bin = _create_fake_pg_dump(tmp_path)
     new_dir = tmp_path / "newly_created_subdir"
     assert not new_dir.exists()
-    await update_config(db_session, backup_dir=str(new_dir), backup_include_audit_logs=True)
+    await update_config(
+        db_session,
+        backup_dir=str(new_dir),
+        backup_include_audit_logs=True,
+        pg_dump_path=pg_dump_bin,
+    )
 
     monkeypatch.setattr(backup_service, "is_postgres_url", lambda url: True)
     monkeypatch.setattr(
