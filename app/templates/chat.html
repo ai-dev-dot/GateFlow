@@ -5,7 +5,7 @@
 
 {% block body %}
 <body class="bg-gray-50 flex h-screen overflow-hidden">
-  <!-- Sidebar: conversations -->
+  <!-- Sidebar: conversations + navigation -->
   <aside class="w-64 bg-gray-900 text-gray-100 flex flex-col shrink-0">
     <div class="h-14 flex items-center justify-between px-4 border-b border-gray-700">
       <span class="text-sm font-medium">会话列表</span>
@@ -14,6 +14,18 @@
     <div id="conv-list" class="flex-1 overflow-y-auto py-1 text-sm">
       <div class="px-4 py-6 text-center text-gray-500 text-xs">加载中...</div>
     </div>
+    <!-- Navigation links -->
+    {% if user and user.role and user.role.name == 'admin' %}
+    <div class="border-t border-gray-700 px-3 py-2 space-y-1 text-xs">
+      <a href="/pages/dashboard" class="block px-2 py-1.5 rounded hover:bg-gray-800 text-gray-400 hover:text-gray-200">📊 全局看板</a>
+      <a href="/pages/gateway" class="block px-2 py-1.5 rounded hover:bg-gray-800 text-gray-400 hover:text-gray-200">🔗 大模型管理</a>
+      <a href="/pages/users" class="block px-2 py-1.5 rounded hover:bg-gray-800 text-gray-400 hover:text-gray-200">👥 人员管理</a>
+      <a href="/pages/audit" class="block px-2 py-1.5 rounded hover:bg-gray-800 text-gray-400 hover:text-gray-200">📋 调用日志</a>
+      <a href="/pages/usage" class="block px-2 py-1.5 rounded hover:bg-gray-800 text-gray-400 hover:text-gray-200">📉 使用统计</a>
+      <a href="/pages/api-keys" class="block px-2 py-1.5 rounded hover:bg-gray-800 text-gray-400 hover:text-gray-200">🔑 API Key</a>
+      <a href="/pages/backup" class="block px-2 py-1.5 rounded hover:bg-gray-800 text-gray-400 hover:text-gray-200">💾 数据库备份</a>
+    </div>
+    {% endif %}
     <div class="border-t border-gray-700 px-4 py-2 flex items-center justify-between text-xs text-gray-400">
       <span>{{ user.username }}</span>
       <a href="/pages/logout" class="hover:text-gray-200">退出</a>
