@@ -199,16 +199,6 @@ GateFlow/
 └── CLAUDE.md                   # AI 开发指南
 ```
 
-## 请求路径
-
-| 路径 | 说明 |
-|------|------|
-| `POST /v1/chat/completions` | OpenAI 兼容网关 |
-| `POST /v1/messages` | Anthropic 兼容网关 |
-| `POST /api/chat/conversations/{id}/messages/stream` | Web AI 对话（流式） |
-| `GET /pages/*` | 管理页面（HTML） |
-| `GET /` | 已登录 → 首页，未登录 → 登录页 |
-
 ## 系统架构
 
 ```
@@ -230,14 +220,6 @@ GateFlow/
     ▼           ▼           ▼
 DeepSeek     OpenAI      更多模型...
 ```
-
-## 贡献指南
-
-> 本仓库**不接收代码贡献**（不接受 Pull Request）。代码以只读方式
-> 公开发布，供阅读、学习、作为本地 fork 起点。如需报告 bug 或讨论
-> 设计，欢迎开 [Issue](../../issues)（不保证回复）。
->
-> 详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 许可证
 
