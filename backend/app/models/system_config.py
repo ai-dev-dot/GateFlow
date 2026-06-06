@@ -24,7 +24,10 @@ class SystemConfig(Base, TimestampMixin):
     __tablename__ = "system_config"
 
     id = Column(Integer, primary_key=True, default=1)
-    backup_dir = Column(String(500), nullable=False, default="./backups")
+    # Both backup_dir and pg_dump_path are NULL by default. The service
+    # refuses to run a backup if either is unset — admin must opt in.
+    # Nullable here so we can store None instead of a sentinel string.
+    backup_dir = Column(String(500), nullable=True, default=None)
     backup_include_audit_logs = Column(Boolean, nullable=False, default=False)
     # Absolute path to the pg_dump binary. The admin fills this in via the
     # /backup settings UI; the service does NOT search PATH or hardcoded
@@ -38,12 +41,15 @@ class SystemConfig(Base, TimestampMixin):
 
     @validates("backup_dir")
     def _validate_backup_dir(self, key, value):
-        # Reject empty / whitespace-only paths at the ORM level. The
-        # service layer's update_config() raises a friendlier error that
-        # the router maps to 422; this is the last line of defense.
-        if not value or not value.strip():
+        # None = "not set", allowed. Non-None must be a non-empty string.
+        # The service layer's update_config() raises a friendlier error
+        # for empty input that the router maps to 422.
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
             raise ValueError("backup_dir must not be empty")
-        return value.strip()
+        return stripped
 
 
 async def ensure_columns(engine: AsyncEngine) -> None:
@@ -72,9 +78,6 @@ async def ensure_columns(engine: AsyncEngine) -> None:
     if not new_columns:
         return
 
-    # One ALTER per missing column. VARCHAR(500) works on both PG and
-    # SQLite. Wrap in try/except — if two workers race the ALTER, the
-    # second one fails with "duplicate column"; that's harmless.
     for ddl in new_columns:
         sql = f"ALTER TABLE system_config {ddl}"
         try:
@@ -82,6 +85,28 @@ async def ensure_columns(engine: AsyncEngine) -> None:
                 await conn.execute(text(sql))
             logger.info(f"[system_config] applied: {sql}")
         except Exception as e:  # noqa: BLE001
-            # "duplicate column" race is fine; anything else surfaces.
             if "duplicate" not in str(e).lower() and "already exists" not in str(e).lower():
                 logger.warning(f"[system_config] ALTER failed ({sql}): {e}")
+
+    # Ensure backup_dir and pg_dump_path columns allow NULL.
+    # Pre-existing installs may have NOT NULL constraints that need to be relaxed.
+    try:
+        async with engine.begin() as conn:
+            def _check_nullable(sync_conn):
+                inspector = inspect(sync_conn)
+                columns = inspector.get_columns("system_config")
+                nullable_map = {}
+                for col in columns:
+                    if col["name"] in ("backup_dir", "pg_dump_path"):
+                        nullable_map[col["name"]] = col.get("nullable", True)
+                return nullable_map
+
+            nullable_info = await conn.run_sync(_check_nullable)
+
+            for col_name, is_nullable in nullable_info.items():
+                if not is_nullable:
+                    sql = f"ALTER TABLE system_config ALTER COLUMN {col_name} DROP NOT NULL"
+                    await conn.execute(text(sql))
+                    logger.info(f"[system_config] applied: {sql}")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[system_config] nullable migration check failed: {e}")

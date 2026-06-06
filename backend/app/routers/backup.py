@@ -4,7 +4,9 @@ Path: /api/backup/*
 - GET  /config         → SystemConfigResponse
 - PUT  /config         → update backup_dir / backup_include_audit_logs
 - POST /run            → trigger pg_dump (PG-only; 501 on SQLite)
+                         body: {"note": "..."} (optional)
 - GET  /history        → list existing .sql files in backup_dir
+                         each entry includes note from companion .meta.json
 
 Import-safety: this module imports backup_service at module load (for
 the exception classes and service functions). backup_service uses
@@ -24,6 +26,7 @@ from app.models import User
 from app.schemas.backup import (
     BackupFileInfo,
     BackupResultResponse,
+    BackupRunRequest,
     SystemConfigResponse,
     SystemConfigUpdate,
 )
@@ -75,6 +78,7 @@ async def update_backup_config(
 
 @router.post("/run", response_model=BackupResultResponse)
 async def trigger_backup(
+    body: BackupRunRequest = BackupRunRequest(),
     _admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -86,7 +90,7 @@ async def trigger_backup(
       the admin UI can show it directly.
     """
     try:
-        return await run_backup(db)
+        return await run_backup(db, note=body.note)
     except BackupNotSupportedError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
     except BackupFailedError as e:

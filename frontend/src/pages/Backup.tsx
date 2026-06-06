@@ -24,6 +24,7 @@ import {
   Space,
   Statistic,
   Table,
+  Tag,
   Tooltip,
   message,
 } from 'antd';
@@ -57,6 +58,7 @@ export default function Backup() {
   const [history, setHistory] = useState<BackupFileInfo[]>([]);
   const [result, setResult] = useState<BackupResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState('');
 
   const loadAll = useCallback(async () => {
     try {
@@ -92,8 +94,9 @@ export default function Backup() {
     setError(null);
     setResult(null);
     try {
-      const r = await runBackup();
+      const r = await runBackup(note.trim() || undefined);
       setResult(r);
+      setNote('');
       message.success(`备份完成: ${r.filename}`);
       await loadAll();
     } catch (e: unknown) {
@@ -107,6 +110,13 @@ export default function Backup() {
   };
 
   const dirSet = !!config?.backup_dir?.trim();
+  const pgDumpPathSet = !!config?.pg_dump_path?.trim();
+  const canRun = dirSet && pgDumpPathSet;
+  const disabledReason = !dirSet
+    ? '请先设置备份目录'
+    : !pgDumpPathSet
+      ? '请先设置 pg_dump 路径'
+      : '';
   const runButton = (
     <Popconfirm
       title="确认立即备份？"
@@ -114,15 +124,15 @@ export default function Backup() {
       onConfirm={handleRun}
       okText="开始备份"
       cancelText="取消"
-      disabled={!dirSet || running}
+      disabled={!canRun || running}
     >
-      <Tooltip title={!dirSet ? '请先设置备份目录' : ''}>
+      <Tooltip title={disabledReason}>
         <Button
           type="primary"
           size="large"
           icon={<CloudDownloadOutlined />}
           loading={running}
-          disabled={!dirSet}
+          disabled={!canRun}
         >
           立即备份
         </Button>
@@ -180,6 +190,16 @@ export default function Backup() {
 
       <Card title="立即备份" style={{ marginBottom: 16 }}>
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Input.TextArea
+            placeholder="备份备注（可选），如：升级前全量备份"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            maxLength={200}
+            showCount
+            autoSize={{ minRows: 1, maxRows: 3 }}
+            disabled={running}
+            style={{ maxWidth: 640 }}
+          />
           {runButton}
           {running && (
             <Alert
@@ -237,6 +257,17 @@ export default function Backup() {
           locale={{ emptyText: <Empty description="暂无备份" /> }}
           columns={[
             { title: '文件名', dataIndex: 'filename' },
+            {
+              title: '备注',
+              dataIndex: 'note',
+              ellipsis: true,
+              render: (n: string | null) =>
+                n ? (
+                  n
+                ) : (
+                  <Tag>—</Tag>
+                ),
+            },
             {
               title: '大小',
               dataIndex: 'size_bytes',

@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 class SystemConfigResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    backup_dir: str
+    backup_dir: str | None = None
     backup_include_audit_logs: bool
     pg_dump_path: str | None = None
     updated_at: datetime
@@ -50,10 +50,17 @@ class SystemConfigUpdate(BaseModel):
         return v.strip()  # "" stays ""; service treats "" as "clear"
 
 
+class BackupRunRequest(BaseModel):
+    """Request body for POST /backup/run. All fields optional."""
+
+    note: str | None = None
+
+
 class BackupFileInfo(BaseModel):
     filename: str
     size_bytes: int
     mtime: datetime
+    note: str | None = None
 
 
 class BackupResultResponse(BaseModel):
@@ -63,3 +70,4 @@ class BackupResultResponse(BaseModel):
     tables_dumped: int
     excluded_audit_logs: bool
     path: str
+    note: str | None = None

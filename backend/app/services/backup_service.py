@@ -23,6 +23,7 @@ import asyncio
 import contextlib
 import datetime
 import glob
+import json
 import logging
 import os
 import subprocess
@@ -37,7 +38,9 @@ from app.models.system_config import SystemConfig
 logger = logging.getLogger(__name__)
 
 # Default singleton row values (used when SystemConfig is first created).
-DEFAULT_BACKUP_DIR = "./backups"
+# backup_dir is NULL by default — admin must set it explicitly before
+# running a backup. We do NOT guess a directory because writing
+# production dumps to an unexpected path is worse than failing loud.
 DEFAULT_BACKUP_INCLUDE_AUDIT_LOGS = False
 
 # Table excluded by default from the dump DATA (rows). Schema is preserved
@@ -107,7 +110,7 @@ async def get_config(db: AsyncSession) -> SystemConfig:
 
     config = SystemConfig(
         id=1,
-        backup_dir=DEFAULT_BACKUP_DIR,
+        backup_dir=None,
         backup_include_audit_logs=DEFAULT_BACKUP_INCLUDE_AUDIT_LOGS,
     )
     db.add(config)
@@ -156,8 +159,11 @@ async def update_config(
 # ---------- backup execution ----------
 
 
-async def run_backup(db: AsyncSession) -> dict:
+async def run_backup(db: AsyncSession, *, note: str | None = None) -> dict:
     """Run pg_dump and write a timestamped .sql file to backup_dir.
+
+    On success, also writes a companion .meta.json file containing
+    backup metadata (including the user-supplied note).
 
     Returns a dict suitable for BackupResultResponse.
     Raises:
@@ -174,6 +180,13 @@ async def run_backup(db: AsyncSession) -> dict:
         )
 
     config = await get_config(db)
+
+    if not config.backup_dir:
+        raise BackupFailedError(
+            "备份目录未设置。请先在'备份设置'中填写备份目录的绝对路径。",
+            returncode=-1,
+            stderr="",
+        )
     backup_dir = config.backup_dir
     os.makedirs(backup_dir, exist_ok=True)
 
@@ -221,7 +234,13 @@ async def run_backup(db: AsyncSession) -> dict:
         # actual table even with the default 'public' schema search path.
         argv.append(f"--exclude-table-data={EXCLUDED_AUDIT_TABLE}")
 
-    env = {**os.environ, "PGPASSWORD": pg["password"]} if pg["password"] else None
+    # Always pass a full copy of the environment. If a password is
+    # provided, add PGPASSWORD; otherwise let pg_dump use .pgpass or
+    # peer auth. Using ``None`` for env would inherit the parent
+    # environment, but an explicit copy is safer when we modify it.
+    env = {**os.environ}
+    if pg["password"]:
+        env["PGPASSWORD"] = pg["password"]
 
     start = datetime.datetime.now()
     # Use subprocess.run in a worker thread (asyncio.to_thread) rather than
@@ -273,6 +292,41 @@ async def run_backup(db: AsyncSession) -> dict:
         logger.warning(f"Could not read backup file to count tables: {e}")
 
     size_bytes = os.path.getsize(out_path)
+
+    # Write companion .meta.json (sidecar file) alongside the .sql dump.
+    # Stores user note + diagnostic metadata. Best-effort — a failure
+    # here should not prevent the backup from being returned as success.
+    pg_version = ""
+    try:
+        # pg_dump --version outputs a single line like "pg_dump (PostgreSQL) 16.4"
+        ver_proc = subprocess.run(
+            [config.pg_dump_path, "--version"],
+            capture_output=True, text=True, check=False,
+        )
+        pg_version = ver_proc.stdout.strip().split("\n")[0] if ver_proc.returncode == 0 else ""
+    except Exception:  # noqa: BLE001
+        pass
+
+    meta = {
+        "database": pg["database"],
+        "host": f'{pg["host"]}:{pg["port"]}',
+        "user": pg["user"],
+        "format": "plain",
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "note": note or "",
+        "pgVersion": pg_version,
+        "fileSizeBytes": size_bytes,
+        "fileName": filename,
+        "tablesDumped": tables_dumped,
+        "excludedAuditLogs": not config.backup_include_audit_logs,
+    }
+    meta_path = out_path.replace(".sql", ".meta.json")
+    try:
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=2)
+    except OSError as e:
+        logger.warning(f"Could not write meta.json: {e}")
+
     return {
         "filename": filename,
         "size_bytes": size_bytes,
@@ -280,6 +334,7 @@ async def run_backup(db: AsyncSession) -> dict:
         "tables_dumped": tables_dumped,
         "excluded_audit_logs": not config.backup_include_audit_logs,
         "path": out_path,
+        "note": note,
     }
 
 
@@ -288,6 +343,10 @@ async def run_backup(db: AsyncSession) -> dict:
 
 async def list_backups(db: AsyncSession) -> list[dict]:
     """List .sql files in backup_dir sorted by mtime desc.
+
+    For each .sql file, tries to read a companion .meta.json to extract
+    the user-supplied note. If the meta file is missing or malformed,
+    ``note`` defaults to ``None``.
 
     Returns [] if backup_dir doesn't exist (rather than raising) so the
     admin UI can render an empty state on a fresh install.
@@ -298,11 +357,22 @@ async def list_backups(db: AsyncSession) -> list[dict]:
 
     files = glob.glob(os.path.join(config.backup_dir, "*.sql"))
     files.sort(key=os.path.getmtime, reverse=True)
-    return [
-        {
+
+    results = []
+    for p in files:
+        note = None
+        meta_path = p.replace(".sql", ".meta.json")
+        try:
+            with open(meta_path, encoding="utf-8") as f:
+                meta = json.load(f)
+            note = meta.get("note") or None
+        except (OSError, json.JSONDecodeError, KeyError):
+            pass
+
+        results.append({
             "filename": os.path.basename(p),
             "size_bytes": os.path.getsize(p),
             "mtime": datetime.datetime.fromtimestamp(os.path.getmtime(p)),
-        }
-        for p in files
-    ]
+            "note": note,
+        })
+    return results

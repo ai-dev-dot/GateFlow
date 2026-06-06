@@ -178,7 +178,7 @@ export interface PaginatedResponse<T> {
 // ---------------------
 
 export interface SystemConfig {
-  backup_dir: string;
+  backup_dir: string | null;
   backup_include_audit_logs: boolean;
   pg_dump_path: string | null;
   updated_at: string;
@@ -191,10 +191,12 @@ export interface BackupResult {
   tables_dumped: number;
   excluded_audit_logs: boolean;
   path: string;
+  note: string | null;
 }
 
 export interface BackupFileInfo {
   filename: string;
-  size_bytes: string;
+  size_bytes: number;
   mtime: string;
+  note: string | null;
 }

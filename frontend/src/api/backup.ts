@@ -9,7 +9,7 @@ export async function getConfig(): Promise<SystemConfig> {
 
 /** 更新备份配置（partial update） */
 export async function updateConfig(data: {
-  backup_dir?: string;
+  backup_dir?: string | null;
   backup_include_audit_logs?: boolean;
   pg_dump_path?: string | null;
 }): Promise<SystemConfig> {
@@ -18,8 +18,8 @@ export async function updateConfig(data: {
 }
 
 /** 触发一次备份（admin only，PG-only；SQLite 环境会 501） */
-export async function runBackup(): Promise<BackupResult> {
-  const res = await client.post('/backup/run');
+export async function runBackup(note?: string): Promise<BackupResult> {
+  const res = await client.post('/backup/run', { note: note || undefined });
   return res.data;
 }
 
