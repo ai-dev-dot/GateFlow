@@ -13,26 +13,69 @@
       <p class="text-sm text-gray-500 mt-1">企业 AI 网关</p>
     </div>
     <div class="bg-white rounded-lg border border-gray-200 p-6">
-      {% if error %}
-      <div class="bg-red-50 text-red-700 text-sm rounded p-3 mb-4 border border-red-200">{{ error }}</div>
-      {% endif %}
-      <form method="POST" action="/pages/login">
+      <div id="login-error" class="hidden bg-red-50 text-red-700 text-sm rounded p-3 mb-4 border border-red-200"></div>
+      <form id="login-form">
         <div class="mb-4">
           <label class="block text-sm font-medium text-gray-700 mb-1">用户名</label>
-          <input type="text" name="username" required autofocus
+          <input type="text" name="username" id="login-username" required autofocus autocomplete="username"
                  class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
         </div>
         <div class="mb-6">
           <label class="block text-sm font-medium text-gray-700 mb-1">密码</label>
-          <input type="password" name="password" required
+          <input type="password" name="password" id="login-password" required autocomplete="current-password"
                  class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
         </div>
-        <button type="submit"
+        <button type="submit" id="login-btn"
                 class="w-full bg-blue-600 text-white rounded py-2 text-sm font-medium hover:bg-blue-700 transition-colors">
           登录
         </button>
       </form>
     </div>
   </div>
+  <script>
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errDiv = document.getElementById('login-error');
+      errDiv.classList.add('hidden');
+      errDiv.textContent = '';
+
+      const btn = document.getElementById('login-btn');
+      btn.disabled = true;
+      btn.textContent = '登录中...';
+
+      const username = document.getElementById('login-username').value.trim();
+      const password = document.getElementById('login-password').value;
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          const msg = data.detail || '用户名或密码错误';
+          errDiv.textContent = msg;
+          errDiv.classList.remove('hidden');
+          // 清空密码，保留用户名
+          document.getElementById('login-password').value = '';
+          document.getElementById('login-password').focus();
+          return;
+        }
+
+        // 登录成功，设置 cookie 并跳转
+        const data = await res.json();
+        document.cookie = `gf_session=${data.access_token}; path=/; max-age=${7 * 86400}; samesite=lax`;
+        window.location.href = '/pages/chat';
+      } catch (err) {
+        errDiv.textContent = '网络错误，请稍后重试';
+        errDiv.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '登录';
+      }
+    });
+  </script>
 </body>
 </html>

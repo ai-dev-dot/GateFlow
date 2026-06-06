@@ -43,7 +43,7 @@
     <input type="hidden" id="kf-id">
     <div>
       <label class="block text-xs font-medium text-gray-700 mb-1">名称</label>
-      <input type="text" id="kf-name" required class="w-full border rounded px-3 py-2 text-sm">
+      <input type="text" id="kf-name" data-field="name" required class="w-full border rounded px-3 py-2 text-sm">
     </div>
     <div>
       <label class="block text-xs font-medium text-gray-700 mb-1">客户端类型</label>
@@ -188,6 +188,9 @@ function closeModal() { modal.close(); }
 
 document.getElementById('key-form').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const formEl = document.getElementById('key-form');
+  clearFormErrors(formEl);
+
   const perms = [...document.querySelectorAll('#kf-permissions input:checked')].map(cb => cb.value);
   const body = {
     name: document.getElementById('kf-name').value,
@@ -200,23 +203,13 @@ document.getElementById('key-form').addEventListener('submit', async (e) => {
   if (expires) body.expires_at = new Date(expires).toISOString();
 
   try {
-    let res;
-    if (editingId) {
-      res = await fetch(`/api/api-keys/${editingId}`, {
-        method: 'PUT', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-    } else {
-      res = await fetch('/api/api-keys', {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-    }
+    const url = editingId ? `/api/api-keys/${editingId}` : '/api/api-keys';
+    const method = editingId ? 'PUT' : 'POST';
+    const res = await fetch(url, { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.detail || '保存失败');
+      showFormErrors(formEl, data.detail);
+      return;
     }
     const result = await res.json();
     modal.close();
@@ -230,7 +223,7 @@ document.getElementById('key-form').addEventListener('submit', async (e) => {
       showToast('已保存');
     }
     loadKeys();
-  } catch (e) { showToast(e.message, 'error'); }
+  } catch (e) { showToast(e.message || '网络错误', 'error'); }
 });
 
 function copyAndClose() {

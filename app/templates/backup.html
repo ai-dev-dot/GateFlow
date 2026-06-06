@@ -92,6 +92,11 @@ async function apiFetch(path, opts = {}) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
+    // 处理 Pydantic 422 数组错误
+    if (Array.isArray(data.detail)) {
+      const msg = data.detail.map(e => translateError(e.msg, FIELD_LABELS[e.loc?.[e.loc.length - 1]] || e.loc?.[e.loc.length - 1] || '未知字段')).join('；');
+      throw new Error(msg);
+    }
     throw new Error(data.detail || `HTTP ${res.status}`);
   }
   return res.json();

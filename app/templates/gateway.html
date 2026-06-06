@@ -65,15 +65,15 @@
   <form id="model-form" class="p-4 space-y-3">
     <input type="hidden" id="mf-id">
     <div class="grid grid-cols-2 gap-3">
-      <div><label class="block text-xs font-medium text-gray-700 mb-1">别名</label><input type="text" id="mf-alias" required class="w-full border rounded px-3 py-2 text-sm"></div>
-      <div><label class="block text-xs font-medium text-gray-700 mb-1">供应商</label><input type="text" id="mf-provider" class="w-full border rounded px-3 py-2 text-sm"></div>
+      <div><label class="block text-xs font-medium text-gray-700 mb-1">别名</label><input type="text" id="mf-alias" data-field="model_alias" required class="w-full border rounded px-3 py-2 text-sm"></div>
+      <div><label class="block text-xs font-medium text-gray-700 mb-1">供应商</label><input type="text" id="mf-provider" data-field="provider" required class="w-full border rounded px-3 py-2 text-sm"></div>
     </div>
-    <div><label class="block text-xs font-medium text-gray-700 mb-1">目标模型</label><input type="text" id="mf-target-model" required class="w-full border rounded px-3 py-2 text-sm"></div>
-    <div><label class="block text-xs font-medium text-gray-700 mb-1">目标 URL</label><input type="text" id="mf-target-url" class="w-full border rounded px-3 py-2 text-sm" placeholder="留空使用供应商默认"></div>
+    <div><label class="block text-xs font-medium text-gray-700 mb-1">目标模型</label><input type="text" id="mf-target-model" data-field="target_model" required class="w-full border rounded px-3 py-2 text-sm"></div>
+    <div><label class="block text-xs font-medium text-gray-700 mb-1">目标 URL</label><input type="text" id="mf-target-url" data-field="target_url" required class="w-full border rounded px-3 py-2 text-sm" placeholder="如 https://api.openai.com/v1"></div>
     <div class="grid grid-cols-3 gap-3">
-      <div><label class="block text-xs font-medium text-gray-700 mb-1">优先级</label><input type="number" id="mf-priority" value="0" class="w-full border rounded px-3 py-2 text-sm"></div>
-      <div><label class="block text-xs font-medium text-gray-700 mb-1">Temperature</label><input type="number" id="mf-temp" step="0.1" min="0" max="2" class="w-full border rounded px-3 py-2 text-sm"></div>
-      <div><label class="block text-xs font-medium text-gray-700 mb-1">Max Tokens</label><input type="number" id="mf-max-tokens" class="w-full border rounded px-3 py-2 text-sm"></div>
+      <div><label class="block text-xs font-medium text-gray-700 mb-1">优先级</label><input type="number" id="mf-priority" data-field="priority" value="0" class="w-full border rounded px-3 py-2 text-sm"></div>
+      <div><label class="block text-xs font-medium text-gray-700 mb-1">Temperature</label><input type="number" id="mf-temp" data-field="default_temperature" step="0.1" min="0" max="2" class="w-full border rounded px-3 py-2 text-sm"></div>
+      <div><label class="block text-xs font-medium text-gray-700 mb-1">Max Tokens</label><input type="number" id="mf-max-tokens" data-field="default_max_tokens" class="w-full border rounded px-3 py-2 text-sm"></div>
     </div>
     <div class="flex items-center gap-2"><input type="checkbox" id="mf-active" checked><label for="mf-active" class="text-sm">启用</label></div>
     <div class="flex justify-end gap-2 pt-2">
@@ -91,10 +91,10 @@
   </div>
   <form id="pkey-form" class="p-4 space-y-3">
     <input type="hidden" id="pkf-id">
-    <div><label class="block text-xs font-medium text-gray-700 mb-1">名称</label><input type="text" id="pkf-name" required class="w-full border rounded px-3 py-2 text-sm"></div>
-    <div><label class="block text-xs font-medium text-gray-700 mb-1">供应商</label><input type="text" id="pkf-provider" required class="w-full border rounded px-3 py-2 text-sm"></div>
-    <div><label class="block text-xs font-medium text-gray-700 mb-1">API Key</label><input type="password" id="pkf-key" class="w-full border rounded px-3 py-2 text-sm" placeholder="留空则不修改（编辑时）"></div>
-    <div><label class="block text-xs font-medium text-gray-700 mb-1">备注</label><input type="text" id="pkf-notes" class="w-full border rounded px-3 py-2 text-sm"></div>
+    <div><label class="block text-xs font-medium text-gray-700 mb-1">名称</label><input type="text" id="pkf-name" data-field="name" required class="w-full border rounded px-3 py-2 text-sm"></div>
+    <div><label class="block text-xs font-medium text-gray-700 mb-1">供应商</label><input type="text" id="pkf-provider" data-field="provider" required class="w-full border rounded px-3 py-2 text-sm"></div>
+    <div><label class="block text-xs font-medium text-gray-700 mb-1">API Key</label><input type="password" id="pkf-key" data-field="key" class="w-full border rounded px-3 py-2 text-sm" placeholder="留空则不修改（编辑时）"></div>
+    <div><label class="block text-xs font-medium text-gray-700 mb-1">备注</label><input type="text" id="pkf-remark" data-field="remark" class="w-full border rounded px-3 py-2 text-sm"></div>
     <div class="flex items-center gap-2"><input type="checkbox" id="pkf-active" checked><label for="pkf-active" class="text-sm">启用</label></div>
     <div class="flex justify-end gap-2 pt-2">
       <button type="button" onclick="document.getElementById('pkey-modal').close()" class="px-4 py-2 border rounded text-sm hover:bg-gray-50">取消</button>
@@ -177,14 +177,17 @@ async function editModel(id) {
 
 document.getElementById('model-form').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const formEl = document.getElementById('model-form');
+  clearFormErrors(formEl);
+
   const body = {
-    alias: document.getElementById('mf-alias').value,
-    provider: document.getElementById('mf-provider').value || null,
+    model_alias: document.getElementById('mf-alias').value,
+    provider: document.getElementById('mf-provider').value,
     target_model: document.getElementById('mf-target-model').value,
-    target_url: document.getElementById('mf-target-url').value || null,
+    target_url: document.getElementById('mf-target-url').value,
     priority: parseInt(document.getElementById('mf-priority').value) || 0,
-    temperature: document.getElementById('mf-temp').value ? parseFloat(document.getElementById('mf-temp').value) : null,
-    max_tokens: document.getElementById('mf-max-tokens').value ? parseInt(document.getElementById('mf-max-tokens').value) : null,
+    default_temperature: document.getElementById('mf-temp').value ? parseFloat(document.getElementById('mf-temp').value) : null,
+    default_max_tokens: document.getElementById('mf-max-tokens').value ? parseInt(document.getElementById('mf-max-tokens').value) : null,
     is_active: document.getElementById('mf-active').checked,
   };
   try {
@@ -192,12 +195,12 @@ document.getElementById('model-form').addEventListener('submit', async (e) => {
     const res = await fetch(url, { method: modelEditingId ? 'PUT' : 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
-      const msg = Array.isArray(d.detail) ? d.detail.map(e => e.msg || JSON.stringify(e)).join('; ') : (d.detail || '保存失败');
-      throw new Error(msg);
+      showFormErrors(formEl, d.detail);
+      return;
     }
     document.getElementById('model-modal').close();
     showToast('已保存'); loadModels();
-  } catch (e) { showToast(e.message, 'error'); }
+  } catch (e) { showToast(e.message || '网络错误', 'error'); }
 });
 
 async function deleteModel(id, name) {
@@ -221,7 +224,7 @@ async function loadProviderKeys() {
       return `<tr class="border-t border-gray-100 hover:bg-gray-50">
         <td class="px-4 py-2 font-medium">${k.name}</td>
         <td class="px-4 py-2">${k.provider || '—'}</td>
-        <td class="px-4 py-2 text-gray-500">${k.notes || '—'}</td>
+        <td class="px-4 py-2 text-gray-500">${k.remark || '—'}</td>
         <td class="px-4 py-2 font-mono text-xs text-gray-500">${k.key_preview || '—'}</td>
         <td class="px-4 py-2"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-${statusColor}-100 text-${statusColor}-800">${k.is_active !== false ? '启用' : '禁用'}</span></td>
         <td class="px-4 py-2 text-right">
@@ -241,7 +244,7 @@ function showKeyModal() {
   document.getElementById('pkf-name').value = '';
   document.getElementById('pkf-provider').value = '';
   document.getElementById('pkf-key').value = '';
-  document.getElementById('pkf-notes').value = '';
+  document.getElementById('pkf-remark').value = '';
   document.getElementById('pkf-active').checked = true;
   document.getElementById('pkey-modal').showModal();
 }
@@ -257,17 +260,20 @@ async function editPKey(id) {
   document.getElementById('pkf-name').value = k.name;
   document.getElementById('pkf-provider').value = k.provider || '';
   document.getElementById('pkf-key').value = '';
-  document.getElementById('pkf-notes').value = k.notes || '';
+  document.getElementById('pkf-remark').value = k.remark || '';
   document.getElementById('pkf-active').checked = k.is_active !== false;
   document.getElementById('pkey-modal').showModal();
 }
 
 document.getElementById('pkey-form').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const formEl = document.getElementById('pkey-form');
+  clearFormErrors(formEl);
+
   const body = {
     name: document.getElementById('pkf-name').value,
     provider: document.getElementById('pkf-provider').value,
-    notes: document.getElementById('pkf-notes').value || null,
+    remark: document.getElementById('pkf-remark').value || null,
     is_active: document.getElementById('pkf-active').checked,
   };
   const key = document.getElementById('pkf-key').value;
@@ -277,12 +283,12 @@ document.getElementById('pkey-form').addEventListener('submit', async (e) => {
     const res = await fetch(url, { method: pkeyEditingId ? 'PUT' : 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
-      const msg = Array.isArray(d.detail) ? d.detail.map(e => e.msg || JSON.stringify(e)).join('; ') : (d.detail || '保存失败');
-      throw new Error(msg);
+      showFormErrors(formEl, d.detail);
+      return;
     }
     document.getElementById('pkey-modal').close();
     showToast('已保存'); loadProviderKeys();
-  } catch (e) { showToast(e.message, 'error'); }
+  } catch (e) { showToast(e.message || '网络错误', 'error'); }
 });
 
 async function resetPKey(id, name) {

@@ -195,7 +195,27 @@ async def test_logout_clears_cookie(client: AsyncClient, test_user):
 # --- Root redirect ---
 
 @pytest.mark.asyncio
-async def test_root_redirects_to_chat(client: AsyncClient):
+async def test_root_redirects_to_login_when_not_logged_in(client: AsyncClient):
+    """未登录时根路径应跳转到登录页"""
     resp = await client.get("/", follow_redirects=False)
+    assert resp.status_code in (307, 302, 303)
+    assert "/pages/login" in resp.headers.get("location", "")
+
+
+@pytest.mark.asyncio
+async def test_root_redirects_to_chat_when_logged_in(client: AsyncClient):
+    """已登录时根路径应跳转到首页（chat）"""
+    from jose import jwt
+    from datetime import datetime, timedelta, timezone
+    from app.config import get_settings
+
+    settings = get_settings()
+    expire = datetime.now(timezone.utc) + timedelta(days=1)
+    token = jwt.encode(
+        {"sub": "917a6ad5-a8ab-4f6e-b531-a9c9bb629bbe", "username": "admin", "role": "admin", "exp": expire},
+        settings.JWT_SECRET_KEY,
+        algorithm="HS256",
+    )
+    resp = await client.get("/", follow_redirects=False, cookies={"gf_session": token})
     assert resp.status_code in (307, 302, 303)
     assert "/pages/chat" in resp.headers.get("location", "")
