@@ -544,7 +544,7 @@ async with engine.begin() as conn:
 
 | 编号 | 状态 | Commit | 备注 |
 |------|------|--------|------|
-| P1-1 | TODO | — | |
+| P1-1 | DONE | 7c3b3dc | 抽 _resolve_credentials，+10 tests，顺带修 SQLite 下 JWT sub 隐式转换 bug |
 | P1-2 | TODO | — | |
 | P1-3 | TODO | — | |
 | P1-4 | TODO | — | |
