@@ -190,7 +190,11 @@ document.getElementById('model-form').addEventListener('submit', async (e) => {
   try {
     const url = modelEditingId ? `/api/gateway/models/${modelEditingId}` : '/api/gateway/models';
     const res = await fetch(url, { method: modelEditingId ? 'PUT' : 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || '保存失败'); }
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      const msg = Array.isArray(d.detail) ? d.detail.map(e => e.msg || JSON.stringify(e)).join('; ') : (d.detail || '保存失败');
+      throw new Error(msg);
+    }
     document.getElementById('model-modal').close();
     showToast('已保存'); loadModels();
   } catch (e) { showToast(e.message, 'error'); }
@@ -271,7 +275,11 @@ document.getElementById('pkey-form').addEventListener('submit', async (e) => {
   try {
     const url = pkeyEditingId ? `/api/gateway/provider-keys/${pkeyEditingId}` : '/api/gateway/provider-keys';
     const res = await fetch(url, { method: pkeyEditingId ? 'PUT' : 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || '保存失败'); }
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      const msg = Array.isArray(d.detail) ? d.detail.map(e => e.msg || JSON.stringify(e)).join('; ') : (d.detail || '保存失败');
+      throw new Error(msg);
+    }
     document.getElementById('pkey-modal').close();
     showToast('已保存'); loadProviderKeys();
   } catch (e) { showToast(e.message, 'error'); }
