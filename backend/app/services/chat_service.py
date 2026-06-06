@@ -148,7 +148,11 @@ class ChatService:
             tokens=0,
         )
         self.db.add(user_message)
-        await self.db.commit()
+        # P1-6: flush (not commit) so the user_message and AI message share
+        # one transaction. If _call_llm raises (or anything between here and
+        # the final commit fails), the user_message is rolled back too —
+        # the user shouldn't see a stranded question with no AI response.
+        await self.db.flush()
 
         history = await self._get_capped_history(conversation_id)
         messages = [{"role": msg.role, "content": msg.content} for msg in history]
@@ -256,7 +260,13 @@ class ChatService:
             tokens=0,
         )
         self.db.add(user_message)
+        # Early commit IS required here: the on_complete hook below runs in
+        # a NEW session (StreamForwarder._save_after_stream uses async_session())
+        # and needs to see the user_message to either save the AI message
+        # next to it or delete it on failure (P1-6).
         await self.db.commit()
+        await self.db.refresh(user_message)
+        user_message_id = user_message.id
 
         history = await self._get_capped_history(conversation_id)
         messages = [{"role": msg.role, "content": msg.content} for msg in history]
@@ -310,12 +320,21 @@ class ChatService:
         await self.db.commit()
         await self.db.refresh(audit_log)
 
-        # Define on_complete hook: save AI message + auto-title
+        # Define on_complete hook: save AI message + auto-title, OR clean
+        # up the orphan user_message if the stream failed (P1-6).
         conv_id = conversation_id
         user_content = content
+        orphan_user_message_id = user_message_id
 
         async def on_complete(db, full_content, status_code):
-            if not full_content:
+            if status_code != 200 or not full_content:
+                # Stream failed or returned no content — remove the orphan
+                # user_message so the conversation isn't left showing a
+                # question with no response. The client already received
+                # an error SSE event from the forwarder.
+                await db.execute(
+                    Message.__table__.delete().where(Message.id == orphan_user_message_id)
+                )
                 return
             ai_message = Message(
                 conversation_id=conv_id,
