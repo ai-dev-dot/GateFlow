@@ -545,7 +545,7 @@ async with engine.begin() as conn:
 | 编号 | 状态 | Commit | 备注 |
 |------|------|--------|------|
 | P1-1 | DONE | 7c3b3dc | 抽 _resolve_credentials，+10 tests，顺带修 SQLite 下 JWT sub 隐式转换 bug |
-| P1-2 | TODO | — | |
+| P1-2 | DONE | 197042d | bridge_stream 80 行删掉，+transform_chunk/error_sse 钩子，+AnthropicBridgeTransformer，+save_after_stream 公共方法；+15 tests |
 | P1-3 | TODO | — | |
 | P1-4 | TODO | — | |
 | P1-5 | TODO | — | |
